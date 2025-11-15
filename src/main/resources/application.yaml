@@ -3,22 +3,34 @@ spring:
     name: mockly
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/{db}
-    username: ${username}
-    password: ${password}
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT}/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   # JPA 설정
   jpa:
     hibernate:
       ddl-auto: create-drop
-      show-sql: true
-      properties:
-        hibernate:
-          format_sql: true
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
 
 #  # H2 콘솔 활성화 (개발 편의성)
 #  h2:
 #    console:
 #      enabled: true
 #      path: /h2-console
+
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 900000 # 15분
+  refresh-token-expiration: 604800000 # 7일 (테스트용, 추후 2592000000으로 변경 = 30일)
+
+# OAUTH 설정
+oauth:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID}
+    issuer: https://accounts.google.com

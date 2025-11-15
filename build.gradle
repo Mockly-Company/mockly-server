@@ -40,6 +40,8 @@ dependencies {
 //	implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
 //	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 //	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+    implementation 'com.fasterxml.uuid:java-uuid-generator:4.3.0'
 
 	implementation("com.google.api-client:google-api-client:2.7.0")
 	implementation("io.jsonwebtoken:jjwt-api:0.12.6")
