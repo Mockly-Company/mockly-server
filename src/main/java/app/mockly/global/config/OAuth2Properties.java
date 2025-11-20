@@ -11,5 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "oauth.google")
 public class OAuth2Properties {
     private String clientId;
+    private String clientSecret;
+    private String tokenUri;
     private String issuer;
 }

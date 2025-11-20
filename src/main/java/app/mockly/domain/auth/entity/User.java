@@ -1,5 +1,6 @@
 package app.mockly.domain.auth.entity;
 
+import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.global.common.BaseEntity;
 import com.fasterxml.uuid.Generators;
 import jakarta.persistence.*;
@@ -38,6 +39,15 @@ public class User extends BaseEntity {
     @Builder.Default
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<RefreshToken> refreshTokens = new ArrayList<>();
+
+    public static User from(GoogleUser googleUser) {
+        return User.builder()
+                .provider(OAuth2Provider.GOOGLE)
+                .providerId(googleUser.sub())
+                .email(googleUser.email())
+                .name(googleUser.name())
+                .build();
+    }
 
     @PrePersist
     public void generateId() {
