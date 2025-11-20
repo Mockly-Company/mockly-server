@@ -19,6 +19,7 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.document;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.*;
+import org.springframework.restdocs.payload.JsonFieldType;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
@@ -66,12 +67,18 @@ class AuthControllerTest {
                                 fieldWithPath("redirectUri").description("OAuth redirect URI")
                         ),
                         responseFields(
-                                fieldWithPath("accessToken").description("Mockly JWT access token (15분 유효)"),
-                                fieldWithPath("refreshToken").description("Mockly refresh token (7일 유효"),
-                                fieldWithPath("expiresIn").description("Access token 만료 시간 (ms)"),
-                                fieldWithPath("user.id").description("사용자 ID"),
-                                fieldWithPath("user.email").description("이메일"),
-                                fieldWithPath("user.name").description("이름")
+                                fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부"),
+                                fieldWithPath("data").type(JsonFieldType.OBJECT).description("응답 데이터"),
+                                fieldWithPath("data.accessToken").type(JsonFieldType.STRING).description("Mockly JWT access token (15분 유효)"),
+                                fieldWithPath("data.refreshToken").type(JsonFieldType.STRING).description("Mockly refresh token (7일 유효)"),
+                                fieldWithPath("data.expiresIn").type(JsonFieldType.NUMBER).description("Access token 만료 시간 (ms)"),
+                                fieldWithPath("data.user").type(JsonFieldType.OBJECT).description("사용자 정보"),
+                                fieldWithPath("data.user.id").type(JsonFieldType.STRING).description("사용자 ID"),
+                                fieldWithPath("data.user.email").type(JsonFieldType.STRING).description("이메일"),
+                                fieldWithPath("data.user.name").type(JsonFieldType.STRING).description("이름"),
+                                fieldWithPath("error").type(JsonFieldType.STRING).description("에러 코드 (실패 시)").optional(),
+                                fieldWithPath("message").type(JsonFieldType.STRING).description("응답 메시지").optional(),
+                                fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프 (Unix timestamp, ms)")
                         )));
     }
 

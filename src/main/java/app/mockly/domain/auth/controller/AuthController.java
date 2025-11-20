@@ -4,6 +4,7 @@ import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
 import app.mockly.domain.auth.dto.request.LoginWithGoogleRequest;
 import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.service.AuthService;
+import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,9 +31,9 @@ public class AuthController {
     }
 
     @PostMapping("/login/google/code")
-    public ResponseEntity<LoginResponse> loginWithGoogleCode(@Valid @RequestBody AuthorizationCodeRequest request) {
+    public ResponseEntity<ApiResponse<LoginResponse>> loginWithGoogleCode(@Valid @RequestBody AuthorizationCodeRequest request) {
         LoginResponse loginResponse = authService
                 .loginWithGoogleCode(request.code(), request.codeVerifier(), request.redirectUri());
-        return ResponseEntity.ok(loginResponse);
+        return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 }
