@@ -1,0 +1,76 @@
+= Mockly API Guide
+:doctype: book
+:icons: font
+:source-highlighter: highlightjs
+:toc: left
+:toclevels: 4
+:sectlinks:
+
+[[overview]]
+= Overview
+
+Mockly는 AI 기반 모의 면접 플랫폼입니다.
+
+[[overview-http-status-codes]]
+== HTTP status codes
+
+Mockly는 다음 HTTP 상태 코드를 사용합니다:
+
+|===
+| Status code | Usage
+
+| `200 OK`
+| 요청이 성공적으로 처리됨
+
+| `201 Created`
+| 새 리소스가 성공적으로 생성됨
+
+| `400 Bad Request`
+| 잘못된 요청. 요청 파라미터를 확인하세요
+
+| `401 Unauthorized`
+| 인증이 필요합니다
+
+| `403 Forbidden`
+| 권한이 없습니다
+
+| `404 Not Found`
+| 요청한 리소스를 찾을 수 없습니다
+
+| `500 Internal Server Error`
+| 서버 에러가 발생했습니다
+|===
+
+[[resources]]
+= Resources
+
+[[resources-auth]]
+== Authentication
+
+인증 관련 API입니다.
+
+[[resources-auth-google-code]]
+=== Google 소셜 로그인 (OAuth 2.1)
+
+OAuth 2.1 표준을 준수하는 Google 소셜 로그인 API입니다.
+Authorization Code Flow + PKCE를 사용합니다.
+
+==== Request structure
+
+include::{snippets}/auth-login-google-code/http-request.adoc[]
+
+==== Request fields
+
+include::{snippets}/auth-login-google-code/request-fields.adoc[]
+
+==== Example request
+
+include::{snippets}/auth-login-google-code/curl-request.adoc[]
+
+==== Response structure
+
+include::{snippets}/auth-login-google-code/http-response.adoc[]
+
+==== Response fields
+
+include::{snippets}/auth-login-google-code/response-fields.adoc[]
