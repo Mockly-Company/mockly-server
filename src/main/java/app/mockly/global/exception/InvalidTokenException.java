@@ -1,11 +1,17 @@
 package app.mockly.global.exception;
 
-public class InvalidTokenException extends RuntimeException {
+import app.mockly.global.common.ApiStatusCode;
+
+public class InvalidTokenException extends AuthenticationException {
+    public InvalidTokenException() {
+        super(ApiStatusCode.INVALID_TOKEN);
+    }
+
     public InvalidTokenException(String message) {
-        super(message);
+        super(ApiStatusCode.INVALID_TOKEN, message);
     }
 
     public InvalidTokenException(String message, Throwable cause) {
-        super(message, cause);
+        super(ApiStatusCode.INVALID_TOKEN, message, cause);
     }
 }

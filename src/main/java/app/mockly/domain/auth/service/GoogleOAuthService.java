@@ -36,15 +36,16 @@ public class GoogleOAuthService {
                 .retrieve()
                 .onStatus(httpStatusCode -> httpStatusCode.is4xxClientError(), (req, res) -> {
                     log.error("Google Token 교환 실패: {}", res.getStatusCode());
-                    // TODO: 각 에러별 처리
+                    throw new InvalidTokenException("Google 인증 코드가 유효하지 않습니다");
                 })
                 .onStatus(httpStatusCode -> httpStatusCode.is5xxServerError() , (req, res) -> {
                     log.error("Google Server Error: {}", res.getStatusCode());
+                    // TODO: 외부 API 연동 실패 예외 처리 (ExternalApiException 등)
+                    throw new RuntimeException("Google 서버 오류가 발생했습니다");
                 })
                 .body(GoogleToken.class);
         if (googleToken == null || googleToken.idToken() == null) {
-            // TODO: custom exception으로 변경
-            throw new RuntimeException("Google Token 교환 실패");
+            throw new InvalidTokenException("Google Token 교환에 실패했습니다");
         }
         return googleToken.idToken();
     }
@@ -53,15 +54,19 @@ public class GoogleOAuthService {
         try {
             GoogleIdToken googleIdToken = verifier.verify(idToken);
             if (googleIdToken == null) {
-                throw new InvalidTokenException("유효하지 않은 Google ID Token입니다.");
+                throw new InvalidTokenException("유효하지 않은 Google ID Token입니다");
             }
 
             GoogleIdToken.Payload payload = googleIdToken.getPayload();
             return GoogleUser.from(payload);
         } catch (GeneralSecurityException e) {
-            throw new RuntimeException(e);
+            log.error("Google ID Token 검증 중 보안 오류 발생", e);
+            // TODO: 외부 API 연동 실패 예외 처리
+            throw new RuntimeException("Google ID Token 검증에 실패했습니다", e);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.error("Google ID Token 검증 중 IO 오류 발생", e);
+            // TODO: 외부 API 연동 실패 예외 처리
+            throw new RuntimeException("Google ID Token 검증에 실패했습니다", e);
         }
     }
 }
