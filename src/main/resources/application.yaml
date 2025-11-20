@@ -3,7 +3,7 @@ spring:
     name: mockly
 
   datasource:
-    url: jdbc:postgresql://localhost:${POSTGRES_PORT}/${POSTGRES_DB}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT}/${POSTGRES_DB}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -16,6 +16,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
 #  # H2 콘솔 활성화 (개발 편의성)
 #  h2:
@@ -32,5 +33,7 @@ jwt:
 # OAUTH 설정
 oauth:
   google:
-    client-id: ${GOOGLE_CLIENT_ID}
+    client-id: ${GOOGLE_WEB_CLIENT_ID}
+    client-secret: ${GOOGLE_WEB_CLIENT_SECRET}
+    token-uri: https://oauth2.googleapis.com/token
     issuer: https://accounts.google.com
