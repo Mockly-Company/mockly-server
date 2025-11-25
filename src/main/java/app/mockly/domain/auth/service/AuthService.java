@@ -3,6 +3,7 @@ package app.mockly.domain.auth.service;
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.response.LoginResponse;
+import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
 import app.mockly.domain.auth.entity.OAuth2Provider;
 import app.mockly.domain.auth.entity.RefreshToken;
 import app.mockly.domain.auth.entity.User;
@@ -10,6 +11,7 @@ import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.JwtProperties;
+import app.mockly.global.exception.InvalidTokenException;
 import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,26 @@ public class AuthService {
                 refreshToken,
                 jwtProperties.getAccessTokenExpiration(),
                 UserInfo.from(user)
+        );
+    }
+
+    public RefreshTokenResponse refreshToken(String refreshToken) {
+        RefreshToken oldRefreshToken = refreshTokenRepository.findByToken(refreshToken)
+                .orElseThrow(() -> new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "유효하지 않은 Refresh Token입니다."));
+
+        if (oldRefreshToken.isExpired()) {
+            refreshTokenRepository.delete(oldRefreshToken);
+            throw new InvalidTokenException(ApiStatusCode.EXPIRED_TOKEN, "만료된 토큰입니다.");
+        }
+
+        User user = oldRefreshToken.getUser();
+        String newAccessToken = jwtService.generateAccessToken(user.getId());
+        String newRefreshToken = jwtService.generateRefreshToken();
+        saveRefreshToken(user, newRefreshToken);
+        return new RefreshTokenResponse(
+                newAccessToken,
+                newRefreshToken,
+                jwtProperties.getAccessTokenExpiration()
         );
     }
 

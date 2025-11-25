@@ -3,7 +3,9 @@ package app.mockly.domain.auth.controller;
 import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
 import app.mockly.domain.auth.dto.request.LoginWithGoogleRequest;
+import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
 import app.mockly.domain.auth.dto.response.LoginResponse;
+import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
 import app.mockly.domain.auth.service.AuthService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -21,10 +23,10 @@ public class AuthController {
     private final AuthService authService;
 
     /**
-     * @deprecated
-     * OAuth 2.1을 준수하지 않습니다.
+     * @deprecated OAuth 2.1을 준수하지 않습니다.
      * 테스트 목적으로만 사용하세요.
-     * */
+     *
+     */
     @PostMapping("/login/google")
     public ResponseEntity<LoginResponse> loginWithGoogle(@Valid @RequestBody LoginWithGoogleRequest request) {
         LoginResponse loginResponse = authService.loginWithGoogle(request.idToken());
@@ -42,5 +44,11 @@ public class AuthController {
     public ResponseEntity<ApiResponse<UserInfo>> getCurrentUsesr(@AuthenticationPrincipal UUID userId) {
         UserInfo userInfo = authService.getCurrentUser(userId);
         return ResponseEntity.ok(ApiResponse.success(userInfo));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        RefreshTokenResponse refreshTokenResponse = authService.refreshToken(request.refreshToken());
+        return ResponseEntity.ok(ApiResponse.success(refreshTokenResponse));
     }
 }

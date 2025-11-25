@@ -2,8 +2,11 @@ package app.mockly.domain.auth.controller;
 
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
+import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
 import app.mockly.domain.auth.entity.OAuth2Provider;
+import app.mockly.domain.auth.entity.RefreshToken;
 import app.mockly.domain.auth.entity.User;
+import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.AuthService;
 import app.mockly.domain.auth.service.GoogleOAuthService;
@@ -21,6 +24,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -61,8 +65,13 @@ class AuthControllerTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
     private User testUser;
     private String validAccessToken;
+    private String validRefreshTokenValue;
+    private RefreshToken validRefreshToken;
 
     @BeforeEach
     void setUp() {
@@ -75,6 +84,13 @@ class AuthControllerTest {
         testUser = userRepository.save(testUser);  // save() 반환값 사용 (ID가 생성됨)
 
         validAccessToken = jwtService.generateAccessToken(testUser.getId());
+        validRefreshTokenValue = jwtService.generateRefreshToken();
+        validRefreshToken = RefreshToken.builder()
+                .token(validRefreshTokenValue)
+                .user(testUser)
+                .expiresAt(Instant.now().plusSeconds(604800))
+                .build();
+        refreshTokenRepository.save(validRefreshToken);
     }
 
     @Test
@@ -228,5 +244,35 @@ class AuthControllerTest {
                     fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프")
                 )
             ));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/refresh - 성공")
+    void refreshToken_Success() throws Exception {
+        RefreshTokenRequest request = new RefreshTokenRequest(validRefreshTokenValue);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andDo(document("refresh-tokens",
+                        requestFields(
+                                fieldWithPath("refreshToken").description("")
+                        ),
+                        responseFields(
+                                fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (true)"),
+                                fieldWithPath("data").type(JsonFieldType.OBJECT).description("응답 데이터 (에러 시 null)"),
+                                fieldWithPath("data.accessToken").type(JsonFieldType.STRING).description("Mockly JWT access token (15분 유효)"),
+                                fieldWithPath("data.refreshToken").type(JsonFieldType.STRING).description("Mockly refresh token (7일 유효)"),
+                                fieldWithPath("data.expiresIn").type(JsonFieldType.NUMBER).description("Access token 만료 시간 (ms)"),
+                                fieldWithPath("error").type(JsonFieldType.NULL).description("에러 코드 (성공 시 null)"),
+                                fieldWithPath("message").type(JsonFieldType.NULL).description("응답 메시지 (성공 시 null)"),
+                                fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프 (Unix timestamp, ms)")
+                        )
+                ));
     }
 }

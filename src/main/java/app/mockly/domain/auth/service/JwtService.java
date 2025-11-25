@@ -1,5 +1,6 @@
 package app.mockly.domain.auth.service;
 
+import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.JwtProperties;
 import app.mockly.global.exception.InvalidTokenException;
 import io.jsonwebtoken.Claims;
@@ -53,9 +54,9 @@ public class JwtService {
             String userId = claims.getSubject();
             return UUID.fromString(userId);
         } catch (ExpiredJwtException e) {
-            throw new InvalidTokenException("만료된 토큰입니다.");
+            throw new InvalidTokenException(ApiStatusCode.EXPIRED_TOKEN, "만료된 토큰입니다.");
         } catch (JwtException e) {
-            throw new InvalidTokenException("유효하지 않은 토큰입니다");
+            throw new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "유효하지 않은 토큰입니다");
         }
     }
 }

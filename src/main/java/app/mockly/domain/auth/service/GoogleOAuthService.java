@@ -2,6 +2,7 @@ package app.mockly.domain.auth.service;
 
 import app.mockly.domain.auth.dto.GoogleToken;
 import app.mockly.domain.auth.dto.GoogleUser;
+import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.OAuth2Properties;
 import app.mockly.global.exception.InvalidTokenException;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -36,7 +37,7 @@ public class GoogleOAuthService {
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                     log.error("Google Token 교환 실패: {}", res.getStatusCode());
-                    throw new InvalidTokenException("Google 인증 코드가 유효하지 않습니다");
+                    throw new InvalidTokenException(ApiStatusCode.INVALID_GOOGLE_TOKEN, "Google 인증 코드가 유효하지 않습니다");
                 })
                 .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
                     log.error("Google Server Error: {}", res.getStatusCode());
@@ -45,7 +46,8 @@ public class GoogleOAuthService {
                 })
                 .body(GoogleToken.class);
         if (googleToken == null || googleToken.idToken() == null) {
-            throw new InvalidTokenException("Google Token 교환에 실패했습니다");
+            // TODO: 적절한 Exception으로 변경 필요
+            throw new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "Google Token 교환에 실패했습니다");
         }
         return googleToken.idToken();
     }
@@ -54,7 +56,7 @@ public class GoogleOAuthService {
         try {
             GoogleIdToken googleIdToken = verifier.verify(idToken);
             if (googleIdToken == null) {
-                throw new InvalidTokenException("유효하지 않은 Google ID Token입니다");
+                throw new InvalidTokenException(ApiStatusCode.INVALID_GOOGLE_TOKEN, "유효하지 않은 Google ID Token입니다");
             }
 
             GoogleIdToken.Payload payload = googleIdToken.getPayload();
