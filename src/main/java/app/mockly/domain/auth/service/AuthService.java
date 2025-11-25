@@ -1,18 +1,22 @@
 package app.mockly.domain.auth.service;
 
 import app.mockly.domain.auth.dto.GoogleUser;
+import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.entity.OAuth2Provider;
 import app.mockly.domain.auth.entity.RefreshToken;
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.UserRepository;
+import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.JwtProperties;
+import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -39,7 +43,7 @@ public class AuthService {
                 accessToken,
                 refreshToken,
                 jwtProperties.getAccessTokenExpiration(),
-                new LoginResponse.UserInfo(
+                new UserInfo(
                         user.getId().toString(),
                         user.getEmail(),
                         user.getName()
@@ -61,11 +65,7 @@ public class AuthService {
                 accessToken,
                 refreshToken,
                 jwtProperties.getAccessTokenExpiration(),
-                new LoginResponse.UserInfo(
-                        user.getId().toString(),
-                        user.getEmail(),
-                        user.getName()
-                )
+                UserInfo.from(user)
         );
     }
 
@@ -94,5 +94,11 @@ public class AuthService {
             List<RefreshToken> tokensToDelete = validTokens.subList(0, deleteCount);
             refreshTokenRepository.deleteAll(tokensToDelete);
         }
+    }
+
+    public UserInfo getCurrentUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApiStatusCode.USER_NOT_FOUND));
+        return UserInfo.from(user);
     }
 }

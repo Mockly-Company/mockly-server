@@ -3,7 +3,10 @@ package app.mockly.global.handler;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.common.ApiResponse;
 import app.mockly.global.exception.BusinessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +16,18 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationException(AuthenticationException e) {
+        if (e instanceof InsufficientAuthenticationException) {
+            ApiStatusCode statusCode = ApiStatusCode.TOKEN_REQUIRED;
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(statusCode.getCode(), statusCode.getMessage()));
+        }
+        ApiStatusCode statusCode = ApiStatusCode.UNAUTHORIZED;
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error(statusCode.getCode(), statusCode.getMessage()));
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {

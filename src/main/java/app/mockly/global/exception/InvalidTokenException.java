@@ -2,7 +2,7 @@ package app.mockly.global.exception;
 
 import app.mockly.global.common.ApiStatusCode;
 
-public class InvalidTokenException extends AuthenticationException {
+public class InvalidTokenException extends BusinessException {
     public InvalidTokenException() {
         super(ApiStatusCode.INVALID_TOKEN);
     }
