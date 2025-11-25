@@ -33,7 +33,6 @@ jwt:
 # OAUTH 설정
 oauth:
   google:
-    client-id: ${GOOGLE_WEB_CLIENT_ID}
-    client-secret: ${GOOGLE_WEB_CLIENT_SECRET}
+    client-id: ${GOOGLE_ANDROID_CLIENT_ID}
     token-uri: https://oauth2.googleapis.com/token
     issuer: https://accounts.google.com

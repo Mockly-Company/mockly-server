@@ -17,6 +17,7 @@ public enum ApiStatusCode {
 
     // 401: 인증 오류
     UNAUTHORIZED(401, "UNAUTHORIZED", "인증이 필요합니다"),
+    TOKEN_REQUIRED(401, "TOKEN_REQUIRED", "토큰이 필요합니다"),
     INVALID_TOKEN(401, "INVALID_TOKEN", "유효하지 않은 토큰입니다"),
     EXPIRED_TOKEN(401, "EXPIRED_TOKEN", "만료된 토큰입니다"),
     INVALID_GOOGLE_TOKEN(401, "INVALID_GOOGLE_TOKEN", "Google 토큰 검증에 실패했습니다"),
