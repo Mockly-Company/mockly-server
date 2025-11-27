@@ -2,13 +2,17 @@
 FROM gradle:8.5-jdk21 AS build
 WORKDIR /app
 
-COPY build.gradle settings.gradle ./
+COPY gradlew ./
 COPY gradle gradle
+COPY build.gradle settings.gradle ./
 
+RUN chmod +x ./gradlew
+
+# 의존성 다운로드
 RUN gradle dependencies --no-daemon || true
 
 COPY src src
-RUN gradle build --no-daemon # production에서는 -x test 추가
+RUN ./gradlew clean build --no-daemon
 
 # 2) Runtime
 FROM eclipse-temurin:21-jre

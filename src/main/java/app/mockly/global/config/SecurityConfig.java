@@ -28,7 +28,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login/**", "/api/auth/refresh").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
-                        .requestMatchers("/docs/**").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/openapi3.yaml").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(customAuthenticationEntryPoint))

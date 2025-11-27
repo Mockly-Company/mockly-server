@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.headers.HeaderDocumentation.headerWithName;
 import static org.springframework.restdocs.headers.HeaderDocumentation.requestHeaders;
-import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.document;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.*;
@@ -159,7 +159,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.id").value(testUser.getId().toString()))
                 .andExpect(jsonPath("$.data.email").value("test@example.com"))
                 .andExpect(jsonPath("$.data.name").value("테스트 사용자"))
-                .andDo(document("auth-me-success",
+                .andDo(document("auth-me",
                         requestHeaders(
                                 headerWithName("Authorization")
                                         .description("Bearer {accessToken} - 로그인 시 발급받은 JWT")
@@ -206,9 +206,6 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("INVALID_TOKEN"))
             .andDo(document("auth-me-invalid-token",
-                requestHeaders(
-                    headerWithName("Authorization").description("잘못된 형식의 JWT")
-                ),
                 responseFields(
                     fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (false)"),
                     fieldWithPath("data").type(JsonFieldType.NULL).description("응답 데이터 (에러 시 null)"),
@@ -233,9 +230,6 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("USER_NOT_FOUND"))
             .andDo(document("auth-me-user-not-found",
-                requestHeaders(
-                    headerWithName("Authorization").description("유효하지만 DB에 존재하지 않는 사용자의 JWT")
-                ),
                 responseFields(
                     fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (false)"),
                     fieldWithPath("data").type(JsonFieldType.NULL).description("응답 데이터 (에러 시 null)"),
