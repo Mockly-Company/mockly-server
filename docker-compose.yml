@@ -32,14 +32,14 @@ services:
       postgres:
         condition: service_healthy # POSTGRES가 healthy일 때만 시작
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_PORT: 5432
       JWT_SECRET: ${JWT_SECRET}
-      GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID}
-      GOOGLE_WEB_CLIENT_SECRET: ${GOOGLE_WEB_CLIENT_SECRET}
+      GOOGLE_ANDROID_CLIENT_ID: ${GOOGLE_ANDROID_CLIENT_ID}
     ports:
       - "8080:8080"
     networks:

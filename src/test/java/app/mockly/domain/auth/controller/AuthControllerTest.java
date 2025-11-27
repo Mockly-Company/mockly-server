@@ -27,17 +27,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.UUID;
 
+import app.mockly.domain.auth.controller.docs.AuthMeDocs;
+import app.mockly.domain.auth.controller.docs.LoginWithGoogleCodeDocs;
+import app.mockly.domain.auth.controller.docs.RefreshTokenDocs;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.springframework.restdocs.headers.HeaderDocumentation.headerWithName;
-import static org.springframework.restdocs.headers.HeaderDocumentation.requestHeaders;
-import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.document;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
+import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.*;
-import org.springframework.restdocs.payload.JsonFieldType;
-
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -126,25 +126,8 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.user.email").value("user@mockly.com"))
                 .andExpect(jsonPath("$.data.user.name").value("Mockly User"))
                 .andDo(document("auth-login-google-code",
-                        requestFields(
-                                fieldWithPath("code").description("Google Authorization Code"),
-                                fieldWithPath("codeVerifier").description("PKCE code verifier"),
-                                fieldWithPath("redirectUri").description("OAuth redirect URI")
-                        ),
-                        responseFields(
-                                fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부"),
-                                fieldWithPath("data").type(JsonFieldType.OBJECT).description("응답 데이터"),
-                                fieldWithPath("data.accessToken").type(JsonFieldType.STRING).description("Mockly JWT access token (15분 유효)"),
-                                fieldWithPath("data.refreshToken").type(JsonFieldType.STRING).description("Mockly refresh token (7일 유효)"),
-                                fieldWithPath("data.expiresIn").type(JsonFieldType.NUMBER).description("Access token 만료 시간 (ms)"),
-                                fieldWithPath("data.user").type(JsonFieldType.OBJECT).description("사용자 정보"),
-                                fieldWithPath("data.user.id").type(JsonFieldType.STRING).description("사용자 ID (UUID)"),
-                                fieldWithPath("data.user.email").type(JsonFieldType.STRING).description("이메일"),
-                                fieldWithPath("data.user.name").type(JsonFieldType.STRING).description("이름"),
-                                fieldWithPath("error").type(JsonFieldType.NULL).description("에러 코드 (성공 시 null)"),
-                                fieldWithPath("message").type(JsonFieldType.NULL).description("응답 메시지 (성공 시 null)"),
-                                fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프 (Unix timestamp, ms)")
-                        )));
+                        resource(LoginWithGoogleCodeDocs.success())
+                ));
     }
 
     @Test
@@ -159,21 +142,8 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.id").value(testUser.getId().toString()))
                 .andExpect(jsonPath("$.data.email").value("test@example.com"))
                 .andExpect(jsonPath("$.data.name").value("테스트 사용자"))
-                .andDo(document("auth-me-success",
-                        requestHeaders(
-                                headerWithName("Authorization")
-                                        .description("Bearer {accessToken} - 로그인 시 발급받은 JWT")
-                        ),
-                        responseFields(
-                                fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (true)"),
-                                fieldWithPath("data").type(JsonFieldType.OBJECT).description("사용자 정보"),
-                                fieldWithPath("data.id").type(JsonFieldType.STRING).description("사용자 ID (UUID)"),
-                                fieldWithPath("data.email").type(JsonFieldType.STRING).description("이메일"),
-                                fieldWithPath("data.name").type(JsonFieldType.STRING).description("이름"),
-                                fieldWithPath("error").type(JsonFieldType.NULL).description("에러 코드 (성공 시 null)"),
-                                fieldWithPath("message").type(JsonFieldType.NULL).description("메시지 (성공 시 null)"),
-                                fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프")
-                        )
+                .andDo(document("auth-me",
+                        resource(AuthMeDocs.success())
                 ));
     }
 
@@ -185,13 +155,7 @@ class AuthControllerTest {
             .andDo(print())
             .andExpect(status().isUnauthorized())
             .andDo(document("auth-me-no-token",
-                responseFields(
-                    fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (false)"),
-                    fieldWithPath("data").type(JsonFieldType.NULL).description("응답 데이터 (에러 시 null)"),
-                    fieldWithPath("error").type(JsonFieldType.STRING).description("에러 코드"),
-                    fieldWithPath("message").type(JsonFieldType.STRING).description("에러 메시지"),
-                    fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프")
-                )
+                resource(AuthMeDocs.noToken())
             ));
     }
 
@@ -206,16 +170,7 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("INVALID_TOKEN"))
             .andDo(document("auth-me-invalid-token",
-                requestHeaders(
-                    headerWithName("Authorization").description("잘못된 형식의 JWT")
-                ),
-                responseFields(
-                    fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (false)"),
-                    fieldWithPath("data").type(JsonFieldType.NULL).description("응답 데이터 (에러 시 null)"),
-                    fieldWithPath("error").type(JsonFieldType.STRING).description("에러 코드 (INVALID_TOKEN)"),
-                    fieldWithPath("message").type(JsonFieldType.STRING).description("에러 메시지"),
-                    fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프")
-                )
+                resource(AuthMeDocs.invalidToken())
             ));
     }
 
@@ -233,16 +188,7 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("USER_NOT_FOUND"))
             .andDo(document("auth-me-user-not-found",
-                requestHeaders(
-                    headerWithName("Authorization").description("유효하지만 DB에 존재하지 않는 사용자의 JWT")
-                ),
-                responseFields(
-                    fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (false)"),
-                    fieldWithPath("data").type(JsonFieldType.NULL).description("응답 데이터 (에러 시 null)"),
-                    fieldWithPath("error").type(JsonFieldType.STRING).description("에러 코드 (USER_NOT_FOUND)"),
-                    fieldWithPath("message").type(JsonFieldType.STRING).description("에러 메시지"),
-                    fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프")
-                )
+                resource(AuthMeDocs.userNotFound())
             ));
     }
 
@@ -260,19 +206,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.accessToken").exists())
                 .andExpect(jsonPath("$.data.refreshToken").exists())
                 .andDo(document("refresh-tokens",
-                        requestFields(
-                                fieldWithPath("refreshToken").description("")
-                        ),
-                        responseFields(
-                                fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 (true)"),
-                                fieldWithPath("data").type(JsonFieldType.OBJECT).description("응답 데이터 (에러 시 null)"),
-                                fieldWithPath("data.accessToken").type(JsonFieldType.STRING).description("Mockly JWT access token (15분 유효)"),
-                                fieldWithPath("data.refreshToken").type(JsonFieldType.STRING).description("Mockly refresh token (7일 유효)"),
-                                fieldWithPath("data.expiresIn").type(JsonFieldType.NUMBER).description("Access token 만료 시간 (ms)"),
-                                fieldWithPath("error").type(JsonFieldType.NULL).description("에러 코드 (성공 시 null)"),
-                                fieldWithPath("message").type(JsonFieldType.NULL).description("응답 메시지 (성공 시 null)"),
-                                fieldWithPath("timestamp").type(JsonFieldType.NUMBER).description("응답 타임스탬프 (Unix timestamp, ms)")
-                        )
+                        resource(RefreshTokenDocs.success())
                 ));
     }
 }

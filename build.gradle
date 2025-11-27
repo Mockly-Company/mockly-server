@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '3.5.7'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'org.asciidoctor.jvm.convert' version '4.0.5'
+	id 'com.epages.restdocs-api-spec' version '0.19.2'
 }
 
 group = 'app.mockly'
@@ -31,6 +32,15 @@ ext {
 	set('springAiVersion', "1.0.3")
 }
 
+openapi3 {
+	server = 'http://localhost:8080'
+	title = 'Mockly API'
+	description = 'AI 기반 모의 면접 플랫폼 API'
+	outputDirectory = "src/main/resources/static"
+	version = '0.0.1-SNAPSHOT'
+	format = 'yaml'
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
@@ -48,6 +58,9 @@ dependencies {
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+	// Swagger UI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+
 	compileOnly 'org.projectlombok:lombok'
     developmentOnly 'me.paulschwarz:spring-dotenv:4.0.0'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
@@ -59,6 +72,7 @@ dependencies {
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+	testImplementation 'com.epages:restdocs-api-spec-mockmvc:0.19.2'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
@@ -78,6 +92,32 @@ tasks.named('asciidoctor') {
 	inputs.dir snippetsDir
     configurations 'asciidoctorExt'
 	dependsOn test
+}
+
+tasks.register('bearerAuthentication') {
+	mustRunAfter tasks.named('openapi3')
+	doLast {
+		def apiSpecFile = file('src/main/resources/static/openapi3.yaml')
+		def contentToAdd =
+				"  securitySchemes:\n" +
+				"    bearerAuth:\n" +
+				"      type: http\n" +
+				"      scheme: bearer\n" +
+				"      bearerFormat: JWT\n" +
+				"\n" +
+				"security:\n" +
+				"  - bearerAuth: []"
+		def existingContent = apiSpecFile.text
+		def updatedContent = existingContent + contentToAdd
+		apiSpecFile.withWriter('UTF-8') {
+			writer -> writer.write(updatedContent)
+		}
+	}
+}
+
+tasks.named('build') {
+	dependsOn tasks.named('openapi3')
+	dependsOn tasks.named('bearerAuthentication')
 }
 
 tasks.named('bootJar') {
