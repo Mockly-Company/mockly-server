@@ -28,6 +28,14 @@ public class ApiResponse<T> {
         return new ApiResponse<>(true, data, null, message);
     }
 
+    public static <T> ApiResponse<T> noContent() {
+        return new ApiResponse<>(true, null, null, null);
+    }
+
+    public static <T> ApiResponse<T> noContent(String message) {
+        return new ApiResponse<>(true, null, null, message);
+    }
+
     public static <T> ApiResponse<T> error(String errorCode, String message) {
         return new ApiResponse<>(false, null, errorCode, message);
     }

@@ -15,6 +15,7 @@ import app.mockly.global.exception.InvalidTokenException;
 import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -26,10 +27,12 @@ public class AuthService {
     private final GoogleOAuthService googleOAuthService;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
+    private final TokenBlacklistService tokenBlacklistService;
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
 
+    @Transactional
     public LoginResponse loginWithGoogleCode(String code, String codeVerifier, String redirectUri) {
         String idToken = googleOAuthService.exchangeAuthorizationCode(code, codeVerifier, redirectUri);
         GoogleUser googleUser = googleOAuthService.verifyIdToken(idToken);
@@ -53,6 +56,7 @@ public class AuthService {
         );
     }
 
+    @Transactional
     public LoginResponse loginWithGoogle(String idToken) {
         GoogleUser googleUser = googleOAuthService.verifyIdToken(idToken);
         User user = userRepository.findByProviderAndProviderId(OAuth2Provider.GOOGLE, googleUser.sub())
@@ -71,6 +75,7 @@ public class AuthService {
         );
     }
 
+    @Transactional
     public RefreshTokenResponse refreshToken(String refreshToken) {
         RefreshToken oldRefreshToken = refreshTokenRepository.findByToken(refreshToken)
                 .orElseThrow(() -> new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "유효하지 않은 Refresh Token입니다."));
@@ -118,9 +123,18 @@ public class AuthService {
         }
     }
 
+    @Transactional(readOnly = true)
     public UserInfo getCurrentUser(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApiStatusCode.USER_NOT_FOUND));
         return UserInfo.from(user);
+    }
+
+    @Transactional
+    public void logout(UUID userId, String accessToken, String refreshToken) {
+        long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
+        tokenBlacklistService.save(accessToken, remainingExpiration);
+
+        refreshTokenRepository.deleteByToken(refreshToken);
     }
 }

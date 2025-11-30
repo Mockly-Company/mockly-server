@@ -45,12 +45,7 @@ public class JwtService {
 
     public UUID validateAccessToken(String token) {
         try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
-
+            Claims claims = extractClaims(token);
             String userId = claims.getSubject();
             return UUID.fromString(userId);
         } catch (ExpiredJwtException e) {
@@ -58,5 +53,21 @@ public class JwtService {
         } catch (JwtException e) {
             throw new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "유효하지 않은 토큰입니다");
         }
+    }
+
+    public long getRemainingExpiration(String token) {
+        Claims claims = extractClaims(token);
+        Date expiration = claims.getExpiration();
+        long expirationMs = expiration.getTime();
+        long nowMs = System.currentTimeMillis();
+        return expirationMs - nowMs;
+    }
+
+    private Claims extractClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

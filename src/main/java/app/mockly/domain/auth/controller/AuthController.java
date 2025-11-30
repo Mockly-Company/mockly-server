@@ -3,6 +3,7 @@ package app.mockly.domain.auth.controller;
 import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
 import app.mockly.domain.auth.dto.request.LoginWithGoogleRequest;
+import app.mockly.domain.auth.dto.request.LogoutRequest;
 import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
 import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
@@ -50,5 +51,16 @@ public class AuthController {
     public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
         RefreshTokenResponse refreshTokenResponse = authService.refreshToken(request.refreshToken());
         return ResponseEntity.ok(ApiResponse.success(refreshTokenResponse));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @AuthenticationPrincipal UUID userId,
+            @RequestHeader("Authorization") String authorization,
+            @RequestBody LogoutRequest request
+    ) {
+        String accessToken = authorization.substring(7);
+        authService.logout(userId, accessToken, request.refreshToken());
+        return ResponseEntity.ok(ApiResponse.noContent());
     }
 }
