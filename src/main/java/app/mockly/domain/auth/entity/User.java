@@ -38,7 +38,7 @@ public class User extends BaseEntity {
 
     @Builder.Default
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<RefreshToken> refreshTokens = new ArrayList<>();
+    private List<Session> sessions = new ArrayList<>();
 
     public static User from(GoogleUser googleUser) {
         return User.builder()

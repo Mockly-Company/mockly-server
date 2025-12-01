@@ -3,7 +3,7 @@ package app.mockly.domain.auth.dto.request;
 import jakarta.validation.constraints.NotBlank;
 
 public record LogoutRequest(
-        @NotBlank(message = "Refresh Token은 필수입니다")
+        @NotBlank(message = "Refresh Token은 필수입니다.")
         String refreshToken
 ) {
 }

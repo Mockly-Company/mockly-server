@@ -1,16 +1,21 @@
 package app.mockly.domain.auth.controller;
 
+import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.GoogleUser;
+import app.mockly.domain.auth.dto.LocationInfo;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
 import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
 import app.mockly.domain.auth.entity.OAuth2Provider;
 import app.mockly.domain.auth.entity.RefreshToken;
+import app.mockly.domain.auth.entity.Session;
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.RefreshTokenRepository;
+import app.mockly.domain.auth.repository.SessionRepository;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.AuthService;
 import app.mockly.domain.auth.service.GoogleOAuthService;
 import app.mockly.domain.auth.service.JwtService;
+import app.mockly.domain.auth.service.TokenBlacklistService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +36,7 @@ import app.mockly.domain.auth.controller.docs.AuthMeDocs;
 import app.mockly.domain.auth.controller.docs.LoginWithGoogleCodeDocs;
 import app.mockly.domain.auth.controller.docs.RefreshTokenDocs;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
@@ -56,8 +61,11 @@ class AuthControllerTest {
     @Autowired
     private AuthService authService;
 
-    @MockitoBean // Google OAuth만 모킹
+    @MockitoBean
     private GoogleOAuthService googleOAuthService;
+
+    @MockitoBean
+    private TokenBlacklistService tokenBlacklistService;
 
     @Autowired
     private JwtService jwtService;
@@ -66,12 +74,17 @@ class AuthControllerTest {
     private UserRepository userRepository;
 
     @Autowired
+    private SessionRepository sessionRepository;
+
+    @Autowired
     private RefreshTokenRepository refreshTokenRepository;
 
     private User testUser;
     private String validAccessToken;
     private String validRefreshTokenValue;
-    private RefreshToken validRefreshToken;
+    private Session validSession;
+    private DeviceInfo deviceInfo;
+    private LocationInfo locationInfo;
 
     @BeforeEach
     void setUp() {
@@ -85,12 +98,20 @@ class AuthControllerTest {
 
         validAccessToken = jwtService.generateAccessToken(testUser.getId());
         validRefreshTokenValue = jwtService.generateRefreshToken();
-        validRefreshToken = RefreshToken.builder()
+
+        deviceInfo = new DeviceInfo("test-device-uuid", "Test Device");
+        locationInfo = new LocationInfo(37.0, 127.0);
+        validSession = sessionRepository.save(Session.create(testUser, deviceInfo, locationInfo));
+
+        RefreshToken refreshToken = RefreshToken.builder()
                 .token(validRefreshTokenValue)
-                .user(testUser)
-                .expiresAt(Instant.now().plusSeconds(604800))
+                .expiresAt(Instant.now().plusMillis(604800000))
                 .build();
-        refreshTokenRepository.save(validRefreshToken);
+        refreshToken = refreshTokenRepository.save(refreshToken);
+        validSession.updateRefreshToken(refreshToken);
+
+        // TokenBlacklistService 모킹 - 모든 토큰을 블랙리스트에 없다고 응답
+        given(tokenBlacklistService.isBlacklisted(anyString())).willReturn(false);
     }
 
     @Test
@@ -111,7 +132,9 @@ class AuthControllerTest {
         AuthorizationCodeRequest request = new AuthorizationCodeRequest(
             "test-auth-code",
             "test-code-verifier",
-            "https://mockly.app/oauth2/google/redirect"
+            "https://mockly.app/oauth2/google/redirect",
+                new DeviceInfo("uuid-from-client", "device-name"),
+                new LocationInfo(127.0, 135.0)
         );
 
         // when & then
@@ -195,7 +218,7 @@ class AuthControllerTest {
     @Test
     @DisplayName("POST /api/auth/refresh - 성공")
     void refreshToken_Success() throws Exception {
-        RefreshTokenRequest request = new RefreshTokenRequest(validRefreshTokenValue);
+        RefreshTokenRequest request = new RefreshTokenRequest(validRefreshTokenValue, deviceInfo, locationInfo);
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)

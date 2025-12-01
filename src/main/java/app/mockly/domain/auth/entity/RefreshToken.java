@@ -17,19 +17,21 @@ public class RefreshToken extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @OneToOne
+    @JoinColumn(name = "session_id")
+    private Session session;
+
     @Column(nullable = false, unique = true, length = 512)
     private String token;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    private String deviceInfo;
 
     @Column(nullable = false)
     private Instant expiresAt;
 
     public boolean isExpired() {
         return Instant.now().isAfter(expiresAt);
+    }
+
+    public void setSession(Session session) {
+        this.session = session;
     }
 }
