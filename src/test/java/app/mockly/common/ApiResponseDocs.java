@@ -43,4 +43,14 @@ public class ApiResponseDocs {
                 fieldWithPath("timestamp").description("응답 타임스탬프").type(SimpleType.NUMBER)
         );
     }
+
+    public static List<FieldDescriptor> noContentFields() {
+        return List.of(
+                fieldWithPath("success").description("성공 여부 (true)").type(SimpleType.BOOLEAN),
+                fieldWithPath("data").description("응답 데이터 (없음)").type(JsonFieldType.NULL),
+                fieldWithPath("error").description("에러 코드 (없음)").type(SimpleType.STRING).optional(),
+                fieldWithPath("message").description("응답 메시지 (없음)").type(SimpleType.STRING).optional(),
+                fieldWithPath("timestamp").description("응답 타임스탬프").type(SimpleType.NUMBER)
+        );
+    }
 }

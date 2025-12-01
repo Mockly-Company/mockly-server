@@ -4,6 +4,7 @@ import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.LocationInfo;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
+import app.mockly.domain.auth.dto.request.LogoutRequest;
 import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
 import app.mockly.domain.auth.entity.OAuth2Provider;
 import app.mockly.domain.auth.entity.RefreshToken;
@@ -34,6 +35,7 @@ import java.util.UUID;
 
 import app.mockly.domain.auth.controller.docs.AuthMeDocs;
 import app.mockly.domain.auth.controller.docs.LoginWithGoogleCodeDocs;
+import app.mockly.domain.auth.controller.docs.LogoutDocs;
 import app.mockly.domain.auth.controller.docs.RefreshTokenDocs;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -230,6 +232,24 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.refreshToken").exists())
                 .andDo(document("refresh-tokens",
                         resource(RefreshTokenDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/logout - 성공")
+    void logout_Success() throws Exception {
+        LogoutRequest request = new LogoutRequest(validRefreshTokenValue);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andDo(document("auth-logout",
+                        resource(LogoutDocs.success())
                 ));
     }
 }
