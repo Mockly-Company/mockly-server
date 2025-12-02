@@ -55,6 +55,11 @@ public class Session extends BaseEntity {
     }
 
     public void updateRefreshToken(RefreshToken refreshToken) {
+        // 기존 RefreshToken과의 관계 끊기
+        if (this.refreshToken != null) {
+            this.refreshToken.setSession(null);
+        }
+
         this.refreshToken = refreshToken;
         if (refreshToken != null) {
             refreshToken.setSession(this);

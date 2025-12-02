@@ -4,6 +4,7 @@ import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.LocationInfo;
 import app.mockly.domain.auth.dto.UserInfo;
+import app.mockly.domain.auth.dto.request.DevLoginRequest;
 import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
 import app.mockly.domain.auth.entity.OAuth2Provider;
@@ -36,6 +37,40 @@ public class AuthService {
     private final UserRepository userRepository;
     private final SessionRepository sessionRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+
+    @Transactional
+    public LoginResponse loginWithDev(DevLoginRequest request) {
+        User user = userRepository.findByEmail(request.email())
+                .orElseGet(() -> {
+                    GoogleUser googleUser = new GoogleUser(
+                            UUID.randomUUID().toString(),
+                            request.email(),
+                            request.name(),
+                            true
+                    );
+                    return createUser(googleUser);
+                });
+        Session session = sessionRepository.findByUserAndDeviceId(user, request.deviceInfo().deviceId())
+                .orElseGet(() -> createSession(user, request.deviceInfo(), request.locationInfo()));
+        if (session.getRefreshToken() != null) {
+            refreshTokenRepository.delete(session.getRefreshToken());
+        }
+
+        String refreshTokenValue = jwtService.generateRefreshToken();
+        RefreshToken refreshToken = createRefreshToken(refreshTokenValue);
+        session.updateRefreshToken(refreshToken);
+        session.updateAccessInfo(request.locationInfo());
+
+        removeOldestSessions(user);
+
+        String accessToken = jwtService.generateAccessToken(user.getId());
+        return new LoginResponse(
+                accessToken,
+                refreshTokenValue,
+                jwtProperties.getAccessTokenExpiration(),
+                UserInfo.from(user)
+        );
+    }
 
     @Transactional
     public LoginResponse loginWithGoogleCode(String code, String codeVerifier, String redirectUri,
@@ -113,11 +148,10 @@ public class AuthService {
 
         Session session = oldRefreshToken.getSession();
         User user = session.getUser();
-        refreshTokenRepository.delete(oldRefreshToken);
 
         String newRefreshTokenValue = jwtService.generateRefreshToken();
         RefreshToken newRefreshToken = createRefreshToken(newRefreshTokenValue);
-        session.updateRefreshToken(newRefreshToken);
+        session.updateRefreshToken(newRefreshToken); // orphanRemoval로 기존 토큰 자동 삭제
         session.updateAccessInfo(locationInfo);
 
         String newAccessToken = jwtService.generateAccessToken(user.getId());

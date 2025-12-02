@@ -1,15 +1,15 @@
 package app.mockly.domain.auth.controller;
 
 import app.mockly.domain.auth.dto.UserInfo;
-import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
-import app.mockly.domain.auth.dto.request.LogoutRequest;
-import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
+import app.mockly.domain.auth.dto.request.*;
 import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
 import app.mockly.domain.auth.service.AuthService;
+import app.mockly.domain.auth.service.JwtService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -55,5 +55,12 @@ public class AuthController {
         String accessToken = authorization.substring(7);
         authService.logout(accessToken, request.refreshToken());
         return ResponseEntity.ok(ApiResponse.noContent());
+    }
+
+    @PostMapping("/dev/login")
+    @Profile("!prod")
+    public ResponseEntity<ApiResponse<LoginResponse>> devLogin(@RequestBody DevLoginRequest request) {
+        LoginResponse loginResponse = authService.loginWithDev(request);
+        return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 }

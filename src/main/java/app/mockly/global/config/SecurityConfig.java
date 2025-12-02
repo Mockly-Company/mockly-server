@@ -26,6 +26,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login/**", "/api/auth/refresh").permitAll()
+                        .requestMatchers("/api/auth/dev/login").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/openapi3.yaml").permitAll()

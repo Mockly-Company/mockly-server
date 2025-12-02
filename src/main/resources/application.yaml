@@ -11,7 +11,7 @@ spring:
   # JPA 설정
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update # 데이터 유지 (테스트 환경에서만 create-drop 사용)
     show-sql: true
     properties:
       hibernate:
