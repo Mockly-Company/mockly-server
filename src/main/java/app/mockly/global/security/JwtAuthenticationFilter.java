@@ -1,6 +1,9 @@
 package app.mockly.global.security;
 
 import app.mockly.domain.auth.service.JwtService;
+import app.mockly.domain.auth.service.TokenBlacklistService;
+import app.mockly.global.common.ApiStatusCode;
+import app.mockly.global.exception.InvalidTokenException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,6 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
+    private final TokenBlacklistService tokenBlacklistService;
     private final HandlerExceptionResolver handlerExceptionResolver;
 
     @Override
@@ -29,6 +33,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (token != null) {
             try {
+                if (tokenBlacklistService.isBlacklisted(token)) {
+                    throw new InvalidTokenException(ApiStatusCode.EXPIRED_TOKEN, "로그아웃된 토큰입니다.");
+                }
                 UUID userId = jwtService.validateAccessToken(token);
 
                 // TODO: 추후 권한 설정

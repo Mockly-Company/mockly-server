@@ -3,6 +3,7 @@ package app.mockly.global.handler;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.common.ApiResponse;
 import app.mockly.global.exception.BusinessException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
+
+@Slf4j
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -52,6 +55,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
+        log.error("Unexpected error occurred", e);
         return ResponseEntity
                 .status(ApiStatusCode.INTERNAL_SERVER_ERROR.getStatus())
                 .body(ApiResponse.error(

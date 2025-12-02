@@ -4,6 +4,7 @@ import app.mockly.common.ApiResponseDocs;
 import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.epages.restdocs.apispec.SimpleType;
 import org.springframework.restdocs.payload.FieldDescriptor;
+import org.springframework.restdocs.payload.JsonFieldType;
 
 import java.util.List;
 
@@ -12,7 +13,13 @@ import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWit
 public class RefreshTokenDocs {
 
     private static final List<FieldDescriptor> REQUEST_FIELDS = List.of(
-            fieldWithPath("refreshToken").description("Refresh Token (7일 유효)").type(SimpleType.STRING)
+            fieldWithPath("refreshToken").description("Refresh Token (7일 유효)").type(SimpleType.STRING),
+            fieldWithPath("deviceInfo").description("디바이스 정보").type(JsonFieldType.OBJECT),
+            fieldWithPath("deviceInfo.deviceId").description("디바이스 고유 ID").type(SimpleType.STRING),
+            fieldWithPath("deviceInfo.deviceName").description("디바이스 이름").type(SimpleType.STRING),
+            fieldWithPath("locationInfo").description("위치 정보 (선택)").type(JsonFieldType.OBJECT).optional(),
+            fieldWithPath("locationInfo.latitude").description("위도").type(SimpleType.NUMBER).optional(),
+            fieldWithPath("locationInfo.longitude").description("경도").type(SimpleType.NUMBER).optional()
     );
 
     private static final List<FieldDescriptor> RESPONSE_DATA_FIELDS = List.of(
