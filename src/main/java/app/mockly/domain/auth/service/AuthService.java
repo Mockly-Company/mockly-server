@@ -50,11 +50,9 @@ public class AuthService {
                     );
                     return createUser(googleUser);
                 });
+
         Session session = sessionRepository.findByUserAndDeviceId(user, request.deviceInfo().deviceId())
                 .orElseGet(() -> createSession(user, request.deviceInfo(), request.locationInfo()));
-        if (session.getRefreshToken() != null) {
-            refreshTokenRepository.delete(session.getRefreshToken());
-        }
 
         String refreshTokenValue = jwtService.generateRefreshToken();
         RefreshToken refreshToken = createRefreshToken(refreshTokenValue);
@@ -82,9 +80,6 @@ public class AuthService {
 
         Session session = sessionRepository.findByUserAndDeviceId(user, deviceInfo.deviceId())
                 .orElseGet(() -> createSession(user, deviceInfo, locationInfo));
-        if (session.getRefreshToken() != null) {
-            refreshTokenRepository.delete(session.getRefreshToken());
-        }
 
         String refreshTokenValue = jwtService.generateRefreshToken();
         RefreshToken refreshToken = createRefreshToken(refreshTokenValue);
@@ -129,9 +124,7 @@ public class AuthService {
             int deleteCount = activeSessions.size() - 2;
             List<Session> sessionsToDelete = activeSessions.subList(0, deleteCount);
             for (Session session: sessionsToDelete) {
-                if (session.getRefreshToken() != null) {
-                    refreshTokenRepository.delete(session.getRefreshToken());
-                }
+                session.updateRefreshToken(null);
             }
         }
     }
@@ -151,7 +144,7 @@ public class AuthService {
 
         String newRefreshTokenValue = jwtService.generateRefreshToken();
         RefreshToken newRefreshToken = createRefreshToken(newRefreshTokenValue);
-        session.updateRefreshToken(newRefreshToken); // orphanRemoval로 기존 토큰 자동 삭제
+        session.updateRefreshToken(newRefreshToken);
         session.updateAccessInfo(locationInfo);
 
         String newAccessToken = jwtService.generateAccessToken(user.getId());
@@ -174,6 +167,12 @@ public class AuthService {
         long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
         tokenBlacklistService.save(accessToken, remainingExpiration);
 
-        refreshTokenRepository.deleteByToken(refreshToken); // Session은 유지
+        refreshTokenRepository.findByToken(refreshToken)
+                .ifPresent(rt -> {
+                    Session session = rt.getSession();
+                    if (session != null) {
+                        session.updateRefreshToken(null);
+                    }
+                });
     }
 }
