@@ -130,17 +130,24 @@ public class AuthService {
     }
 
     @Transactional
-    public RefreshTokenResponse refreshToken(String refreshTokenValue, DeviceInfo deviceInfo, LocationInfo locationInfo) {
+    public RefreshTokenResponse refreshToken(String refreshTokenValue, String deviceId, LocationInfo locationInfo) {
         RefreshToken oldRefreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
                 .orElseThrow(() -> new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "유효하지 않은 Refresh Token입니다."));
 
         if (oldRefreshToken.isExpired()) {
-            refreshTokenRepository.delete(oldRefreshToken);
+            Session session = oldRefreshToken.getSession();
+            if (session != null) {
+                session.updateRefreshToken(null);
+            }
             throw new InvalidTokenException(ApiStatusCode.EXPIRED_TOKEN, "만료된 토큰입니다.");
         }
 
         Session session = oldRefreshToken.getSession();
         User user = session.getUser();
+
+        if (!session.getDeviceId().equals(deviceId)) {
+            throw new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "다른 디바이스에서의 토큰 갱신은 허용되지 않습니다.");
+        }
 
         String newRefreshTokenValue = jwtService.generateRefreshToken();
         RefreshToken newRefreshToken = createRefreshToken(newRefreshTokenValue);

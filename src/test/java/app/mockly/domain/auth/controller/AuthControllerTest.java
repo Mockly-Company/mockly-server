@@ -220,9 +220,10 @@ class AuthControllerTest {
     @Test
     @DisplayName("POST /api/auth/refresh - 성공")
     void refreshToken_Success() throws Exception {
-        RefreshTokenRequest request = new RefreshTokenRequest(validRefreshTokenValue, deviceInfo, locationInfo);
+        RefreshTokenRequest request = new RefreshTokenRequest(validRefreshTokenValue, locationInfo);
 
         mockMvc.perform(post("/api/auth/refresh")
+                        .header("X-Device-Id", deviceInfo.deviceId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andDo(print())

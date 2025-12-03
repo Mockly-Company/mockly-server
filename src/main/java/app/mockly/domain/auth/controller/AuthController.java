@@ -40,9 +40,12 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(
+            @RequestHeader("X-Device-Id") String deviceId,
+            @Valid @RequestBody RefreshTokenRequest request
+    ) {
         RefreshTokenResponse refreshTokenResponse = authService.refreshToken(
-                request.refreshToken(), request.deviceInfo(), request.locationInfo());
+                request.refreshToken(), deviceId, request.locationInfo());
         return ResponseEntity.ok(ApiResponse.success(refreshTokenResponse));
     }
 
