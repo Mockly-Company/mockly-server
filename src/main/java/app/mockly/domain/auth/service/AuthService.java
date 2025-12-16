@@ -19,6 +19,7 @@ import app.mockly.global.config.JwtProperties;
 import app.mockly.global.exception.InvalidTokenException;
 import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -171,8 +172,12 @@ public class AuthService {
 
     @Transactional
     public void logout(String accessToken, String refreshToken) {
-        long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
-        tokenBlacklistService.save(accessToken, remainingExpiration);
+        if (accessToken != null) {
+            long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
+            if (remainingExpiration > 0) {
+                tokenBlacklistService.save(accessToken, remainingExpiration);
+            }
+        }
 
         refreshTokenRepository.findByToken(refreshToken)
                 .ifPresent(rt -> {
