@@ -56,11 +56,15 @@ public class JwtService {
     }
 
     public long getRemainingExpiration(String token) {
-        Claims claims = extractClaims(token);
-        Date expiration = claims.getExpiration();
-        long expirationMs = expiration.getTime();
-        long nowMs = System.currentTimeMillis();
-        return expirationMs - nowMs;
+        try {
+            Claims claims = extractClaims(token);
+            Date expiration = claims.getExpiration();
+            long expirationMs = expiration.getTime();
+            long nowMs = System.currentTimeMillis();
+            return expirationMs - nowMs;
+        } catch (JwtException e) {
+            return -1;
+        }
     }
 
     private Claims extractClaims(String token) {

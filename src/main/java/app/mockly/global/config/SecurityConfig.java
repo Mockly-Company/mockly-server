@@ -3,6 +3,7 @@ package app.mockly.global.config;
 import app.mockly.global.security.CustomAuthenticationEntryPoint;
 import app.mockly.global.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -27,9 +28,9 @@ public class SecurityConfig {
         http
                 .securityMatcher(
                         "/api/auth/login/**",
-                        "/api/auth/refresh",
-                        "/api/auth/logout",
-                        "/api/auth/dev/login",
+                        "/api/auth/refresh/**",
+                        "/api/auth/logout/**",
+                        "/api/auth/dev/login/**",
                         "/h2-console/**",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
@@ -38,6 +39,7 @@ public class SecurityConfig {
                 )
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .headers(headers -> headers
                         .frameOptions(HeadersConfigurer.FrameOptionsConfig::disable));
 
@@ -56,5 +58,12 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterDisable(JwtAuthenticationFilter filter) {
+        FilterRegistrationBean<JwtAuthenticationFilter> bean = new FilterRegistrationBean<>(filter);
+        bean.setEnabled(false);
+        return bean;
     }
 }

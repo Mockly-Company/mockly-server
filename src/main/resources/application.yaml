@@ -42,3 +42,8 @@ oauth:
     client-id: ${GOOGLE_ANDROID_CLIENT_ID}
     token-uri: https://oauth2.googleapis.com/token
     issuer: https://accounts.google.com
+
+logging:
+  level:
+    org.springframework.security.web.FilterChainProxy: DEBUG
+    org.springframework.security.web.util.matcher: DEBUG
