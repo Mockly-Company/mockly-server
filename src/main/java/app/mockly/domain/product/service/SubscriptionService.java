@@ -2,6 +2,7 @@ package app.mockly.domain.product.service;
 
 import app.mockly.domain.product.dto.response.CancelSubscriptionResponse;
 import app.mockly.domain.product.dto.response.CreateSubscriptionResponse;
+import app.mockly.domain.product.dto.response.GetSubscriptionResponse;
 import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.entity.SubscriptionPlan;
 import app.mockly.domain.product.entity.SubscriptionStatus;
@@ -19,6 +20,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
@@ -43,6 +45,13 @@ public class SubscriptionService {
         Subscription saved = subscriptionRepository.save(subscription);
 
         return CreateSubscriptionResponse.from(saved);
+    }
+
+    public GetSubscriptionResponse getMySubscription(UUID userId) {
+        Subscription subscription = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "활성 구독이 없습니다."));
+
+        return GetSubscriptionResponse.from(subscription);
     }
 
     @Transactional
