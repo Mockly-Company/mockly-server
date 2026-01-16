@@ -31,7 +31,6 @@ public class SecurityConfig {
                         "/api/auth/refresh/**",
                         "/api/auth/logout/**",
                         "/api/auth/dev/login/**",
-                        "/api/subscription-products",
                         "/h2-console/**",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
@@ -53,7 +52,9 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/subscription-products").permitAll()
+                        .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(customAuthenticationEntryPoint))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
