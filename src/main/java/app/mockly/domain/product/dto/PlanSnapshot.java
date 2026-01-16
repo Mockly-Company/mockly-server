@@ -17,7 +17,7 @@ public record PlanSnapshot(
         return new PlanSnapshot(
                 subscriptionPlan.getId(),
                 subscriptionPlan.getProduct().getName(),
-                subscriptionPlan.getAmount(),
+                subscriptionPlan.getPrice(),
                 subscriptionPlan.getBillingCycle().name()
         );
     }

@@ -29,7 +29,7 @@ public class SubscriptionPlan {
     private SubscriptionProduct product;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal amount;
+    private BigDecimal price;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
@@ -40,7 +40,7 @@ public class SubscriptionPlan {
     private BillingCycle billingCycle;
 
     public boolean isFree() {
-        return amount.compareTo(BigDecimal.ZERO) == 0;
+        return price.compareTo(BigDecimal.ZERO) == 0;
     }
 
     public boolean isLifetime() {

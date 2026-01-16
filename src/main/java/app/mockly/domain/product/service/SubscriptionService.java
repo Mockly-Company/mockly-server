@@ -48,10 +48,9 @@ public class SubscriptionService {
     }
 
     public GetSubscriptionResponse getMySubscription(UUID userId) {
-        Subscription subscription = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "활성 구독이 없습니다."));
-
-        return GetSubscriptionResponse.from(subscription);
+        return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
+                .map(GetSubscriptionResponse::from)
+                .orElse(null);
     }
 
     @Transactional
