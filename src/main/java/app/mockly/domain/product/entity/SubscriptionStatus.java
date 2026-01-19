@@ -6,7 +6,7 @@ import lombok.Getter;
 public enum SubscriptionStatus {
     PENDING("대기"),
     ACTIVE("활성"),
-    CANCELLED("해지"),
+    CANCELED("해지"),
     EXPIRED("만료");
 
     private final String description;

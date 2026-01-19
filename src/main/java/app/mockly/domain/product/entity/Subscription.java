@@ -74,7 +74,7 @@ public class Subscription extends BaseEntity {
     }
 
     public void cancel() {
-        this.status = SubscriptionStatus.CANCELLED;
+        this.status = SubscriptionStatus.CANCELED;
         this.canceledAt = LocalDateTime.now();
     }
 
@@ -83,6 +83,6 @@ public class Subscription extends BaseEntity {
     }
 
     public boolean isCancelled() {
-        return status == SubscriptionStatus.CANCELLED;
+        return status == SubscriptionStatus.CANCELED;
     }
 }

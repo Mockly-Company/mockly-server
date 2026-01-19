@@ -39,4 +39,8 @@ public class SubscriptionProduct extends BaseEntity {
     @Builder.Default
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SubscriptionPlan> subscriptionPlans = new ArrayList<>();
+
+    public void addPlan(SubscriptionPlan plan) {
+        this.subscriptionPlans.add(plan);
+    }
 }
