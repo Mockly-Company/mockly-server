@@ -14,6 +14,11 @@ import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.SessionRepository;
 import app.mockly.domain.auth.repository.UserRepository;
+import app.mockly.domain.product.entity.BillingCycle;
+import app.mockly.domain.product.entity.Subscription;
+import app.mockly.domain.product.repository.SubscriptionPlanRepository;
+import app.mockly.domain.product.repository.SubscriptionRepository;
+import app.mockly.domain.product.service.SubscriptionService;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.JwtProperties;
 import app.mockly.global.exception.InvalidTokenException;
@@ -34,6 +39,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
     private final TokenBlacklistService tokenBlacklistService;
+    private final SubscriptionService subscriptionService;
 
     private final UserRepository userRepository;
     private final SessionRepository sessionRepository;
@@ -100,7 +106,11 @@ public class AuthService {
 
     private User createUser(GoogleUser googleUser) {
         User newUser = User.from(googleUser);
-        return userRepository.save(newUser);
+        User savedUser = userRepository.save(newUser);
+
+        subscriptionService.assignFreePlan(savedUser.getId());
+
+        return savedUser;
     }
 
     private Session createSession(User user, DeviceInfo deviceInfo, LocationInfo locationInfo) {
