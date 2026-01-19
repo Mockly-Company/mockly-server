@@ -12,7 +12,6 @@ import app.mockly.domain.product.repository.SubscriptionProductRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
-import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +29,7 @@ public class SubscriptionService {
     @Transactional
     public CreateSubscriptionResponse createSubscription(UUID userId, Integer planId) {
         SubscriptionPlan subscriptionPlan = subscriptionPlanRepository.findById(planId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApiStatusCode.RESOURCE_NOT_FOUND, "플랜을 찾을 수 없습니다."));
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "플랜을 찾을 수 없습니다."));
         if (subscriptionPlan.isFree()) {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "무료 플랜은 SMS 인증 후 자동으로 부여됩니다.");
         }
@@ -62,7 +61,7 @@ public class SubscriptionService {
     @Transactional
     public CancelSubscriptionResponse cancelSubscription(UUID userId, Long subscriptionId) {
         Subscription subscription = subscriptionRepository.findById(subscriptionId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다"));
 
         if (!subscription.getUserId().equals(userId)) {
             throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 구독만 해지할 수 있습니다.");

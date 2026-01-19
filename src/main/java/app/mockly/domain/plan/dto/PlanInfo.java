@@ -5,7 +5,7 @@ import app.mockly.domain.plan.entity.Currency;
 import app.mockly.domain.plan.entity.Plan;
 import app.mockly.domain.plan.entity.PlanPrice;
 import app.mockly.global.common.ApiStatusCode;
-import app.mockly.global.exception.ResourceNotFoundException;
+import app.mockly.global.exception.BusinessException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,7 +26,7 @@ public record PlanInfo(
                 .filter(planPrice -> planPrice.getCurrency().equals(Currency.KRW))
                 .findFirst()
                 .map(PlanPrice::getPrice)
-                .orElseThrow(() -> new ResourceNotFoundException(
+                .orElseThrow(() -> new BusinessException(
                         ApiStatusCode.RESOURCE_NOT_FOUND,
                         "플랜 " + plan.getName() + "에 대한 KRW 가격이 없습니다."));
 

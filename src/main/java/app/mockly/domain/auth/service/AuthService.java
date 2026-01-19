@@ -14,17 +14,12 @@ import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.SessionRepository;
 import app.mockly.domain.auth.repository.UserRepository;
-import app.mockly.domain.product.entity.BillingCycle;
-import app.mockly.domain.product.entity.Subscription;
-import app.mockly.domain.product.repository.SubscriptionPlanRepository;
-import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.domain.product.service.SubscriptionService;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.JwtProperties;
+import app.mockly.global.exception.BusinessException;
 import app.mockly.global.exception.InvalidTokenException;
-import app.mockly.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -176,7 +171,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public UserInfo getCurrentUser(UUID userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApiStatusCode.USER_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
         return UserInfo.from(user);
     }
 
