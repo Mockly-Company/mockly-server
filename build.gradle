@@ -54,6 +54,8 @@ dependencies {
 //	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
     implementation 'com.fasterxml.uuid:java-uuid-generator:4.3.0'
 
+	implementation 'io.portone:server-sdk:0.22.0'
+
 	implementation("com.google.api-client:google-api-client:2.7.0")
 	implementation("io.jsonwebtoken:jjwt-api:0.12.6")
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
