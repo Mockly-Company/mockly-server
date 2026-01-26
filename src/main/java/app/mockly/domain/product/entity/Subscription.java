@@ -12,15 +12,7 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(
-        name = "subscription",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_user_plan",
-                        columnNames = {"user_id", "plan_id"}
-                )
-        }
-)
+@Table(name = "subscription")
 public class Subscription extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

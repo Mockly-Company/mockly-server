@@ -25,7 +25,7 @@ public class SubscriptionController {
     public ResponseEntity<ApiResponse<CreateSubscriptionResponse>> createSubscription(
             @RequestBody @Valid CreateSubscriptionRequest request,
             @AuthenticationPrincipal UUID userId) {
-        CreateSubscriptionResponse response = subscriptionService.createSubscription(userId, request.planId());
+        CreateSubscriptionResponse response = subscriptionService.createSubscription(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response));
     }

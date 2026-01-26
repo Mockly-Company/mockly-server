@@ -18,3 +18,10 @@ jwt:
   secret: test-secret-key-for-jwt-authentication-at-least-32-characters-long
   access-token-expiration: 900000 # 15분
   refresh-token-expiration: 604800000 # 7일
+
+# PortOne 테스트 설정 (Mock으로 대체)
+portone:
+  api-secret: test-api-secret
+  api-base: https://api.portone.io
+  store-id: test-store-id
+  channel-key: test-channel-key

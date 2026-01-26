@@ -18,4 +18,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
             WHERE s.userId = :userId AND s.status = :status
             """)
     Optional<Subscription> findByUserIdAndStatus(UUID userId, SubscriptionStatus status);
+
+    @Query("""
+            SELECT s FROM Subscription s
+                JOIN FETCH s.subscriptionPlan sp
+            WHERE s.userId = :userId
+                AND sp.id = :planId
+                AND s.status = :status
+            """)
+    Optional<Subscription> findByUserIdAndPlanIdAndStatus(UUID userId, Integer planId, SubscriptionStatus status);
 }
