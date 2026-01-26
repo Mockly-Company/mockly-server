@@ -16,8 +16,8 @@ public class PaymentMethod extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @Column(name = "billing_key", nullable = false)
@@ -35,6 +35,15 @@ public class PaymentMethod extends BaseEntity {
 
     public void deactivate() {
         this.isActive = false;
+    }
+
+    public static PaymentMethod create(User user, String billingKey, String cardLast4, String cardBrand) {
+        return PaymentMethod.builder()
+                .user(user)
+                .billingKey(billingKey)
+                .cardLast4(cardLast4)
+                .cardBrand(cardBrand)
+                .build();
     }
 
     public void update(String billingKey, String cardLast4, String cardBrand) {

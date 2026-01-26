@@ -2,11 +2,13 @@ package app.mockly.domain.payment.entity;
 
 import app.mockly.domain.product.entity.Currency;
 import app.mockly.global.common.BaseEntity;
+import com.fasterxml.uuid.Generators;
 import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "payment")
@@ -16,11 +18,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Payment extends BaseEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "payment_id", nullable = false, unique = true)
-    private String paymentId;
+    private String id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "invoice_id", nullable = false)
@@ -37,8 +35,9 @@ public class Payment extends BaseEntity {
     @Column(nullable = false, length = 20)
     private PaymentStatus status;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 20)
-    private String paymentMethod;
+    private PaymentMethodType paymentMethod;
 
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
@@ -46,18 +45,22 @@ public class Payment extends BaseEntity {
     @Column(name = "failed_reason")
     private String failedReason;
 
-    public static Payment create(Invoice invoice, String paymentId,
-                                  BigDecimal amount, Currency currency) {
+    public static Payment create(Invoice invoice, BigDecimal amount, Currency currency) {
         return Payment.builder()
+                .id(generatePaymentId())  // PortOne API용 ID
                 .invoice(invoice)
-                .paymentId(paymentId)
                 .amount(amount)
                 .currency(currency)
                 .status(PaymentStatus.PENDING)
                 .build();
     }
 
-    public void markAsPaid(String paymentMethod) {
+    private static String generatePaymentId() {
+        UUID uuid = Generators.timeBasedEpochGenerator().generate();
+        return "pay_" + uuid.toString();
+    }
+
+    public void markAsPaid(PaymentMethodType paymentMethod) {
         this.status = PaymentStatus.PAID;
         this.paymentMethod = paymentMethod;
         this.paidAt = LocalDateTime.now();

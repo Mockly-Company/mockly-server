@@ -3,6 +3,7 @@ package app.mockly.domain.payment.entity;
 import app.mockly.domain.product.entity.Currency;
 import app.mockly.domain.product.entity.Subscription;
 import app.mockly.global.common.BaseEntity;
+import com.fasterxml.uuid.Generators;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(name = "invoice")
@@ -19,8 +21,7 @@ import java.util.List;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Invoice extends BaseEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "subscription_id", nullable = false)
@@ -54,6 +55,7 @@ public class Invoice extends BaseEntity {
                                   Currency currency, LocalDateTime periodStart,
                                   LocalDateTime periodEnd) {
         return Invoice.builder()
+                .id(generateId())
                 .subscription(subscription)
                 .amount(amount)
                 .currency(currency)
@@ -61,6 +63,11 @@ public class Invoice extends BaseEntity {
                 .periodStart(periodStart)
                 .periodEnd(periodEnd)
                 .build();
+    }
+
+    private static String generateId() {
+        UUID uuid = Generators.timeBasedEpochGenerator().generate();
+        return "inv_" + uuid.toString();
     }
 
     public void markAsPaid() {
