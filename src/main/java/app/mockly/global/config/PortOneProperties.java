@@ -10,5 +10,6 @@ public record PortOneProperties(
         @NotBlank String apiSecret,
         String apiBase,
         @NotBlank String storeId,
-        String channelKey
+        String channelKey,
+        @NotBlank String webhookSecret
 ) {}

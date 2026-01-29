@@ -53,3 +53,4 @@ portone:
   api-base: https://api.portone.io
   store-id: ${PORTONE_STORE_ID}
   channel-key: ${PORTONE_CHANNEL_KEY} # 추후 채널들 추가
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}

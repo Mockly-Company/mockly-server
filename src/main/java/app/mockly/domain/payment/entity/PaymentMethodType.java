@@ -1,5 +1,9 @@
 package app.mockly.domain.payment.entity;
 
+import io.portone.sdk.server.payment.PaymentMethod;
+import io.portone.sdk.server.payment.PaymentMethodCard;
+import io.portone.sdk.server.payment.PaymentMethodEasyPay;
+import io.portone.sdk.server.payment.PaymentMethodMobile;
 import lombok.Getter;
 
 @Getter
@@ -13,5 +17,17 @@ public enum PaymentMethodType {
 
     PaymentMethodType(String displayName) {
         this.displayName = displayName;
+    }
+
+    public static PaymentMethodType from(PaymentMethod paymentMethod) {
+        if (paymentMethod == null) {
+            return UNKNOWN;
+        }
+        return switch (paymentMethod) {
+            case PaymentMethodCard card -> CARD;
+            case PaymentMethodEasyPay easyPay -> EASY_PAY;
+            case PaymentMethodMobile mobile -> MOBILE;
+            default -> UNKNOWN;
+        };
     }
 }

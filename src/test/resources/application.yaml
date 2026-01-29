@@ -25,3 +25,4 @@ portone:
   api-base: https://api.portone.io
   store-id: test-store-id
   channel-key: test-channel-key
+  webhook-secret: test-webhook-secret
