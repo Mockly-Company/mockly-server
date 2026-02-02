@@ -4,6 +4,9 @@ import app.mockly.domain.payment.entity.Payment;
 import app.mockly.domain.payment.entity.PaymentMethodType;
 import app.mockly.domain.payment.entity.PaymentStatus;
 import app.mockly.domain.payment.repository.PaymentRepository;
+import app.mockly.domain.product.entity.Subscription;
+import app.mockly.domain.product.entity.SubscriptionStatus;
+import app.mockly.domain.product.service.SubscriptionService;
 import app.mockly.global.config.PortOneProperties;
 import io.portone.sdk.server.PortOneClient;
 import io.portone.sdk.server.errors.WebhookVerificationException;
@@ -22,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class WebhookService {
     private final PortOneProperties portOneProperties;
     private final PortOneClient portOneClient;
+
+    private final SubscriptionService subscriptionService;
 
     private final PaymentRepository paymentRepository;
 
@@ -46,8 +51,7 @@ public class WebhookService {
             log.warn("알 수 없는 결제: {}", paymentId);
             return;
         }
-
-        if (payment.getStatus().equals(PaymentStatus.PAID)) {
+        if (payment.getStatus() == PaymentStatus.PAID) {
             log.info("이미 처리된 결제: {}", paymentId);
             return;
         }
@@ -61,8 +65,22 @@ public class WebhookService {
 
         payment.markAsPaid(paymentMethodType);
         payment.getInvoice().markAsPaid();
-        payment.getInvoice().getSubscription().activate();
 
+        String billingKey = paidPayment.getBillingKey(); // 결제에 사용된 빌링키
+        if (billingKey == null) {
+            log.error("결제에서 빌링키를 찾을 수 없습니다 - paymentId: {}", paymentId);
+            return;
+        }
+
+        Subscription subscription = payment.getInvoice().getSubscription();
+        if (subscription.getStatus() == SubscriptionStatus.PENDING) { // 첫 결제: activate + 첫 스케줄 생성
+            subscription.activate();
+            subscriptionService.createFirstPaymentSchedule(subscription, billingKey);
+            log.info("첫 결제 완료 및 구독 활성화: {}, billingKey: {}", subscription.getId(), billingKey);
+        } else if (subscription.isActive() && !subscription.isCanceled()) { // 갱신 결제: 구독 갱신 + 다음 스케줄 생성
+            subscriptionService.renewSubscription(subscription, billingKey);
+            log.info("구독 갱신 완료: {}, billingKey: {}", subscription.getId(), billingKey);
+        }
     }
 
     private void handleTransactionFailed(WebhookTransactionDataFailed data) {
@@ -73,7 +91,6 @@ public class WebhookService {
             log.warn("알 수 없는 결제: {}", paymentId);
             return;
         }
-
         if (payment.getStatus() == PaymentStatus.FAILED) {
             log.info("이미 실패 처리된 결제: {}", paymentId);
             return;
@@ -104,7 +121,6 @@ public class WebhookService {
             log.warn("알 수 없는 결제: {}", paymentId);
             return;
         }
-
         if (payment.getStatus() == PaymentStatus.CANCELED) {
             log.info("이미 취소 처리된 결제: {}", paymentId);
             return;

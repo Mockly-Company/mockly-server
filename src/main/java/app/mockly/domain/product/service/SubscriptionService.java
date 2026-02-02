@@ -190,10 +190,21 @@ public class SubscriptionService {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "이미 해지되었거나 비활성 상태입니다.");
         }
 
+        // 결제 스케줄 취소
+        if (subscription.getCurrentPaymentScheduleId() != null) {
+            try {
+                portOneService.revokePaymentSchedule(subscription.getCurrentPaymentScheduleId());
+                log.info("결제 스케줄 취소 완료 - subscriptionId: {}, scheduleId: {}",
+                        subscriptionId, subscription.getCurrentPaymentScheduleId());
+            } catch (Exception e) {
+                log.error("결제 스케줄 취소 실패 - subscriptionId: {}, scheduleId: {}",
+                        subscriptionId, subscription.getCurrentPaymentScheduleId(), e);
+                // 실패해도 구독은 취소 처리 (스케줄은 수동 정리 필요)
+            }
+        }
+
         subscription.cancel();
         subscriptionRepository.save(subscription);
-
-        // TODO: PortOne 구독 예약 스케줄링 해지
 
         return CancelSubscriptionResponse.from(subscription);
     }
@@ -205,5 +216,129 @@ public class SubscriptionService {
                     subscription.activate();
                     subscriptionRepository.save(subscription);
                 });
+    }
+
+    /**
+     * 첫 결제 후 스케줄 생성 - Webhook에서 호출
+     * @param subscription 구독 정보
+     * @param billingKey 첫 결제에 사용된 빌링키 (갱신 결제에도 동일한 키 사용)
+     */
+    @Transactional
+    public void createFirstPaymentSchedule(Subscription subscription, String billingKey) {
+        try {
+            LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
+            LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
+                    nextPeriodStart,
+                    subscription.getSubscriptionPlan().getBillingCycle()
+            );
+
+            Invoice nextInvoice = Invoice.create(
+                    subscription,
+                    subscription.getSubscriptionPlan().getPrice(),
+                    Currency.KRW,
+                    nextPeriodStart,
+                    nextPeriodEnd
+            );
+            invoiceRepository.save(nextInvoice);
+
+            Payment nextPayment = Payment.create(
+                    nextInvoice,
+                    subscription.getSubscriptionPlan().getPrice(),
+                    subscription.getSubscriptionPlan().getCurrency()
+            );
+            paymentRepository.save(nextPayment);
+
+            // 다음 결제 예약 시점 = 다음 기간의 시작일
+            LocalDateTime nextPaymentTime = nextPeriodStart;
+            java.time.Instant timeToPay = nextPaymentTime.atZone(java.time.ZoneId.systemDefault()).toInstant();
+
+            // 스케줄 생성: 첫 결제 시 사용한 billingKey 사용
+            String scheduleId = portOneService.createPaymentSchedule(
+                    nextPayment.getId(),
+                    billingKey,
+                    subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
+                    subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
+                    new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
+                    timeToPay
+            );
+
+            subscription.setCurrentPaymentScheduleId(scheduleId);
+            log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, billingKey: {}, 다음 결제일: {}",
+                    subscription.getId(), billingKey, nextPaymentTime);
+
+        } catch (Exception e) {
+            log.error("첫 결제 스케줄 생성 실패 - subscriptionId: {}, billingKey: {}", subscription.getId(), billingKey, e);
+            // TODO: 재시도 로직 추가
+        }
+    }
+
+    /**
+     * 구독 갱신 - Webhook에서 호출
+     * @param subscription 구독 정보
+     * @param billingKey 갱신 결제에 사용된 빌링키 (다음 스케줄에도 동일한 키 사용)
+     */
+    @Transactional
+    public void renewSubscription(Subscription subscription, String billingKey) {
+        try {
+            subscription.extendPeriod();
+
+            LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
+            LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
+                    nextPeriodStart,
+                    subscription.getSubscriptionPlan().getBillingCycle()
+            );
+
+            Invoice nextInvoice = Invoice.create(
+                    subscription,
+                    subscription.getSubscriptionPlan().getPrice(),
+                    Currency.KRW,
+                    nextPeriodStart,
+                    nextPeriodEnd
+            );
+            invoiceRepository.save(nextInvoice);
+
+            Payment nextPayment = Payment.create(
+                    nextInvoice,
+                    subscription.getSubscriptionPlan().getPrice(),
+                    subscription.getSubscriptionPlan().getCurrency()
+            );
+            paymentRepository.save(nextPayment);
+
+            // 다음 결제 스케줄 생성: 다음 기간 시작일에 결제
+            LocalDateTime nextPaymentTime = nextPeriodStart;
+            java.time.Instant timeToPay = nextPaymentTime.atZone(java.time.ZoneId.systemDefault()).toInstant();
+
+            String scheduleId = portOneService.createPaymentSchedule(
+                    nextPayment.getId(),
+                    billingKey,
+                    subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
+                    subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
+                    new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
+                    timeToPay
+            );
+
+            subscription.setCurrentPaymentScheduleId(scheduleId);
+            log.info("구독 갱신 완료 - subscriptionId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
+                    subscription.getId(),
+                    billingKey,
+                    subscription.getCurrentPeriodStart(),
+                    subscription.getCurrentPeriodEnd(),
+                    nextPaymentTime);
+
+        } catch (Exception e) {
+            log.error("구독 갱신 실패 - subscriptionId: {}, billingKey: {}", subscription.getId(), billingKey, e);
+            // TODO: 재시도 로직 추가
+        }
+    }
+
+    /**
+     * 다음 기간 종료일 계산
+     */
+    private LocalDateTime calculateNextPeriodEnd(LocalDateTime start, BillingCycle billingCycle) {
+        return switch (billingCycle) {
+            case MONTHLY -> start.plusMonths(1);
+            case YEARLY -> start.plusYears(1);
+            case LIFETIME -> null;
+        };
     }
 }
