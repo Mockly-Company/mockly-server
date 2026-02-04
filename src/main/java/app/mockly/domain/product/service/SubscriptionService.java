@@ -219,6 +219,49 @@ public class SubscriptionService {
     }
 
     /**
+     * Invoice/Payment 생성 및 스케줄 등록
+     * @return 생성된 scheduleId
+     */
+    private String createNextPaymentSchedule(
+            Subscription subscription,
+            String billingKey,
+            LocalDateTime periodStart,
+            LocalDateTime periodEnd
+    ) {
+        Invoice invoice = Invoice.create(
+                subscription,
+                subscription.getSubscriptionPlan().getPrice(),
+                subscription.getSubscriptionPlan().getCurrency(),
+                periodStart,
+                periodEnd
+        );
+        invoiceRepository.save(invoice);
+
+        Payment payment = Payment.create(
+                invoice,
+                subscription.getSubscriptionPlan().getPrice(),
+                subscription.getSubscriptionPlan().getCurrency()
+        );
+        paymentRepository.save(payment);
+
+        // 스케줄 예약 (UTC 기준)
+        java.time.Instant timeToPay = periodStart
+                .atZone(java.time.ZoneId.of("UTC"))
+                .toInstant();
+        String scheduleId = portOneService.createPaymentSchedule(
+                payment.getId(),
+                billingKey,
+                subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
+                subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
+                new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
+                timeToPay
+        );
+
+        subscription.setCurrentPaymentScheduleId(scheduleId);
+        return scheduleId;
+    }
+
+    /**
      * 첫 결제 후 스케줄 생성 - Webhook에서 호출
      * @param subscription 구독 정보
      * @param billingKey 첫 결제에 사용된 빌링키 (갱신 결제에도 동일한 키 사용)
@@ -232,43 +275,22 @@ public class SubscriptionService {
                     subscription.getSubscriptionPlan().getBillingCycle()
             );
 
-            Invoice nextInvoice = Invoice.create(
+            String scheduleId = createNextPaymentSchedule(
                     subscription,
-                    subscription.getSubscriptionPlan().getPrice(),
-                    Currency.KRW,
+                    billingKey,
                     nextPeriodStart,
                     nextPeriodEnd
             );
-            invoiceRepository.save(nextInvoice);
 
-            Payment nextPayment = Payment.create(
-                    nextInvoice,
-                    subscription.getSubscriptionPlan().getPrice(),
-                    subscription.getSubscriptionPlan().getCurrency()
-            );
-            paymentRepository.save(nextPayment);
-
-            // 다음 결제 예약 시점 = 다음 기간의 시작일
-            LocalDateTime nextPaymentTime = nextPeriodStart;
-            java.time.Instant timeToPay = nextPaymentTime.atZone(java.time.ZoneId.systemDefault()).toInstant();
-
-            // 스케줄 생성: 첫 결제 시 사용한 billingKey 사용
-            String scheduleId = portOneService.createPaymentSchedule(
-                    nextPayment.getId(),
+            log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 다음 결제일: {}",
+                    subscription.getId(),
+                    scheduleId,
                     billingKey,
-                    subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
-                    subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
-                    new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
-                    timeToPay
-            );
-
-            subscription.setCurrentPaymentScheduleId(scheduleId);
-            log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, billingKey: {}, 다음 결제일: {}",
-                    subscription.getId(), billingKey, nextPaymentTime);
+                    nextPeriodStart);
 
         } catch (Exception e) {
-            log.error("첫 결제 스케줄 생성 실패 - subscriptionId: {}, billingKey: {}", subscription.getId(), billingKey, e);
-            // TODO: 재시도 로직 추가
+            log.error("첫 결제 스케줄 생성 실패 - subscriptionId: {}", subscription.getId(), e);
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "스케줄 생성 실패: " + e.getMessage());
         }
     }
 
@@ -288,46 +310,24 @@ public class SubscriptionService {
                     subscription.getSubscriptionPlan().getBillingCycle()
             );
 
-            Invoice nextInvoice = Invoice.create(
+            String scheduleId = createNextPaymentSchedule(
                     subscription,
-                    subscription.getSubscriptionPlan().getPrice(),
-                    Currency.KRW,
+                    billingKey,
                     nextPeriodStart,
                     nextPeriodEnd
             );
-            invoiceRepository.save(nextInvoice);
 
-            Payment nextPayment = Payment.create(
-                    nextInvoice,
-                    subscription.getSubscriptionPlan().getPrice(),
-                    subscription.getSubscriptionPlan().getCurrency()
-            );
-            paymentRepository.save(nextPayment);
-
-            // 다음 결제 스케줄 생성: 다음 기간 시작일에 결제
-            LocalDateTime nextPaymentTime = nextPeriodStart;
-            java.time.Instant timeToPay = nextPaymentTime.atZone(java.time.ZoneId.systemDefault()).toInstant();
-
-            String scheduleId = portOneService.createPaymentSchedule(
-                    nextPayment.getId(),
-                    billingKey,
-                    subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
-                    subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
-                    new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
-                    timeToPay
-            );
-
-            subscription.setCurrentPaymentScheduleId(scheduleId);
-            log.info("구독 갱신 완료 - subscriptionId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
+            log.info("구독 갱신 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
                     subscription.getId(),
+                    scheduleId,
                     billingKey,
                     subscription.getCurrentPeriodStart(),
                     subscription.getCurrentPeriodEnd(),
-                    nextPaymentTime);
+                    nextPeriodStart);
 
         } catch (Exception e) {
             log.error("구독 갱신 실패 - subscriptionId: {}, billingKey: {}", subscription.getId(), billingKey, e);
-            // TODO: 재시도 로직 추가
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "구독 갱신 실패: " + e.getMessage());
         }
     }
 

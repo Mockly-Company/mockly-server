@@ -63,14 +63,14 @@ public class WebhookService {
         }
         PaymentMethodType paymentMethodType = PaymentMethodType.from(paidPayment.getMethod());
 
-        payment.markAsPaid(paymentMethodType);
-        payment.getInvoice().markAsPaid();
-
         String billingKey = paidPayment.getBillingKey(); // 결제에 사용된 빌링키
         if (billingKey == null) {
             log.error("결제에서 빌링키를 찾을 수 없습니다 - paymentId: {}", paymentId);
             return;
         }
+
+        payment.markAsPaid(paymentMethodType);
+        payment.getInvoice().markAsPaid();
 
         Subscription subscription = payment.getInvoice().getSubscription();
         if (subscription.getStatus() == SubscriptionStatus.PENDING) { // 첫 결제: activate + 첫 스케줄 생성

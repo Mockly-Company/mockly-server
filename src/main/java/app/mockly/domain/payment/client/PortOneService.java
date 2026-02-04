@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -34,6 +35,7 @@ public class PortOneService {
         try {
             return portOneClient.getPayment().getBillingKey()
                     .getBillingKeyInfo(billingKey)
+                    .orTimeout(3, TimeUnit.SECONDS)
                     .join();
         } catch (Exception e) {
             log.error("빌링키 조회 실패: {}", billingKey, e);
@@ -76,7 +78,9 @@ public class PortOneService {
                     null,
                     null,
                     null,
-                    null).join();
+                    null)
+                    .orTimeout(10, TimeUnit.SECONDS)
+                    .join();
         } catch (Exception e) {
             log.error("빌링키 결제 실패 - paymentId: {}", paymentId, e);
             // TODO: 다른 Exception으로 만들 필요가 있는지 확인 필요
@@ -88,7 +92,39 @@ public class PortOneService {
     public String createPaymentSchedule(String paymentId, String billingKey, String orderName, Currency currency, PaymentAmountInput amount, Instant timeToPay) {
         log.info("결제 예약 생성 - paymentId: {}, timeToPay: {}", paymentId, timeToPay);
 
-        BillingKeyPaymentInput billingKeyPaymentInput = new BillingKeyPaymentInput(
+        BillingKeyPaymentInput billingKeyPaymentInput = createBillingKeyPaymentInput(billingKey, orderName, amount, currency);
+        try {
+            CreatePaymentScheduleResponse response = portOneClient.getPayment().getPaymentSchedule()
+                    .createPaymentSchedule(paymentId, billingKeyPaymentInput, timeToPay)
+                    .orTimeout(5, TimeUnit.SECONDS)
+                    .join();
+
+            String scheduleId = response.getSchedule().getId();
+            log.info("결제 예약 생성 완료 - scheduleId: {}", scheduleId);
+            return scheduleId;
+        } catch (Exception e) {
+            log.error("결제 예약 생성 실패 - paymentId: {}", paymentId, e);
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 생성 중 오류가 발생했습니다.");
+        }
+    }
+
+    public void revokePaymentSchedule(String scheduleId) {
+        log.info("결제 예약 취소 - scheduleId: {}", scheduleId);
+
+        try {
+            portOneClient.getPayment().getPaymentSchedule()
+                    .revokePaymentSchedules(null, List.of(scheduleId))
+                    .orTimeout(5, TimeUnit.SECONDS)
+                    .join();
+            log.info("결제 예약 취소 완료 - scheduleId: {}", scheduleId);
+        } catch (Exception e) {
+            log.error("결제 예약 취소 실패 - scheduleId: {}", scheduleId, e);
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 취소 도중 오류가 발생했습니다.");
+        }
+    }
+
+    private BillingKeyPaymentInput createBillingKeyPaymentInput(String billingKey, String orderName, PaymentAmountInput amount, Currency currency) {
+        return new BillingKeyPaymentInput(
                 portOneProperties.storeId(),
                 billingKey,
                 portOneProperties.channelKey(),
@@ -111,32 +147,5 @@ public class PortOneService {
                 null,
                 null
         );
-
-        try {
-            CreatePaymentScheduleResponse response = portOneClient.getPayment().getPaymentSchedule()
-                    .createPaymentSchedule(paymentId, billingKeyPaymentInput, timeToPay)
-                    .join();
-
-            String scheduleId = response.getSchedule().getId();
-            log.info("결제 예약 생성 완료 - scheduleId: {}", scheduleId);
-            return scheduleId;
-        } catch (Exception e) {
-            log.error("결제 예약 생성 실패 - paymentId: {}", paymentId, e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 생성 중 오류가 발생했습니다.");
-        }
-    }
-
-    public void revokePaymentSchedule(String scheduleId) {
-        log.info("결제 예약 취소 - scheduleId: {}", scheduleId);
-
-        try {
-            portOneClient.getPayment().getPaymentSchedule()
-                    .revokePaymentSchedules(null, List.of(scheduleId))
-                    .join();
-            log.info("결제 예약 취소 완료 - scheduleId: {}", scheduleId);
-        } catch (Exception e) {
-            log.error("결제 예약 취소 실패 - scheduleId: {}", scheduleId, e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 취소 도중 오류가 발생했습니다.");
-        }
     }
 }
