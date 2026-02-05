@@ -23,8 +23,8 @@ public class PaymentMethod extends BaseEntity {
     @Column(name = "billing_key", nullable = false)
     private String billingKey;
 
-    @Column(name = "card_last4", length = 4)
-    private String cardLast4;
+    @Column(name = "card_number", length = 20)
+    private String cardNumber;
 
     @Column(name = "card_brand", length = 20)
     private String cardBrand;
@@ -33,22 +33,35 @@ public class PaymentMethod extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
+    @Builder.Default
+    @Column(name = "is_default", nullable = false)
+    private boolean isDefault = false;
+
     public void deactivate() {
         this.isActive = false;
     }
 
-    public static PaymentMethod create(User user, String billingKey, String cardLast4, String cardBrand) {
+    public void setAsDefault() {
+        this.isDefault = true;
+    }
+
+    public void unsetDefault() {
+        this.isDefault = false;
+    }
+
+    public static PaymentMethod create(User user, String billingKey, String cardNumber, String cardBrand, boolean isDefault) {
         return PaymentMethod.builder()
                 .user(user)
                 .billingKey(billingKey)
-                .cardLast4(cardLast4)
+                .cardNumber(cardNumber)
                 .cardBrand(cardBrand)
+                .isDefault(isDefault)
                 .build();
     }
 
-    public void update(String billingKey, String cardLast4, String cardBrand) {
+    public void update(String billingKey, String cardNumber, String cardBrand) {
         this.billingKey = billingKey;
-        this.cardLast4 = cardLast4;
+        this.cardNumber = cardNumber;
         this.cardBrand = cardBrand;
         this.isActive = true;
     }

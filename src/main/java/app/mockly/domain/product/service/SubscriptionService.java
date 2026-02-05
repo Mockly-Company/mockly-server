@@ -117,7 +117,7 @@ public class SubscriptionService {
 
             // 결제 수단 정보 추출
             PaymentMethodType paymentMethodType = PaymentMethodType.UNKNOWN;
-            String cardLast4 = null;
+            String cardNumber = null;
             String cardBrand = null;
             List<BillingKeyPaymentMethod> methods = recognized.getMethods();
             if (methods != null && !methods.isEmpty()) {
@@ -126,10 +126,7 @@ public class SubscriptionService {
                     paymentMethodType = PaymentMethodType.CARD;
 
                     Card card = cardMethod.getCard();
-                    String cardNumber = card.getNumber();
-                    if (cardNumber != null && cardNumber.length() >= 4) {
-                        cardLast4 = cardNumber.substring(cardNumber.length() - 4);
-                    }
+                    cardNumber = card.getNumber();
                     CardBrand brand = card.getBrand();
                     if (brand != null) {
                         cardBrand = brand.toString();
@@ -156,7 +153,7 @@ public class SubscriptionService {
                 }
                 activePaymentMethod.deactivate();
             }
-            PaymentMethod newPaymentMethod = PaymentMethod.create(user, billingKey, cardLast4, cardBrand);
+            PaymentMethod newPaymentMethod = PaymentMethod.create(user, billingKey, cardNumber, cardBrand, true);
             paymentMethodRepository.save(newPaymentMethod);
 
             log.info("구독 생성 성공 - userId: {}, subscriptionId: {}, paymentId: {}", userId, subscription.getId(), payment.getId());
