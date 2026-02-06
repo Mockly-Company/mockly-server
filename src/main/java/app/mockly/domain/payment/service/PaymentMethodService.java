@@ -6,6 +6,8 @@ import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.dto.response.PaymentMethodResponse;
 import app.mockly.domain.payment.entity.PaymentMethod;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
+import app.mockly.domain.product.entity.SubscriptionStatus;
+import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import io.portone.sdk.server.common.Card;
@@ -28,6 +30,7 @@ public class PaymentMethodService {
     private final PaymentMethodRepository paymentMethodRepository;
     private final PortOneService portOneService;
     private final UserRepository userRepository;
+    private final SubscriptionRepository subscriptionRepository;
 
     @Transactional
     public PaymentMethodResponse addPaymentMethod(UUID userId, String billingKey) {
@@ -56,6 +59,24 @@ public class PaymentMethodService {
         return paymentMethods.stream()
                 .map(PaymentMethodResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public void deletePaymentMethod(UUID userId, Long paymentMethodId) {
+        PaymentMethod paymentMethod = paymentMethodRepository.findByIdAndUserIdAndIsActiveTrue(paymentMethodId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
+
+        boolean hasActiveSubscription = subscriptionRepository.existsByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        if (hasActiveSubscription && paymentMethod.isDefault()) {
+            throw new BusinessException(ApiStatusCode.BAD_REQUEST,
+                    "활성 구독에 사용 중인 기본 결제 수단입니다. 구독을 해지하거나 다른 결제 수단을 기본으로 설정 후 삭제해주세요.");
+        }
+
+        paymentMethod.deactivate();
+        paymentMethodRepository.save(paymentMethod);
+
+        log.info("결제 수단 삭제 - userId: {}, paymentMethodId: {}, hadActiveSubscription: {}",
+                userId, paymentMethodId, hasActiveSubscription);
     }
 
     private static Card getCard(BillingKeyInfo billingKeyInfo) {

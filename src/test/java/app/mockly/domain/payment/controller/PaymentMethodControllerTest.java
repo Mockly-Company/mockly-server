@@ -7,10 +7,15 @@ import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.controller.docs.AddPaymentMethodDocs;
+import app.mockly.domain.payment.controller.docs.DeletePaymentMethodDocs;
 import app.mockly.domain.payment.controller.docs.GetPaymentMethodsDocs;
 import app.mockly.domain.payment.dto.request.AddPaymentMethodRequest;
 import app.mockly.domain.payment.entity.PaymentMethod;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
+import app.mockly.domain.product.entity.*;
+import app.mockly.domain.product.repository.SubscriptionPlanRepository;
+import app.mockly.domain.product.repository.SubscriptionProductRepository;
+import app.mockly.domain.product.repository.SubscriptionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.portone.sdk.server.common.Card;
 import io.portone.sdk.server.common.CardBrand;
@@ -35,6 +40,7 @@ import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -60,6 +66,15 @@ class PaymentMethodControllerTest {
     private PaymentMethodRepository paymentMethodRepository;
 
     @Autowired
+    private SubscriptionRepository subscriptionRepository;
+
+    @Autowired
+    private SubscriptionPlanRepository subscriptionPlanRepository;
+
+    @Autowired
+    private SubscriptionProductRepository subscriptionProductRepository;
+
+    @Autowired
     private JwtService jwtService;
 
     @MockitoBean
@@ -70,6 +85,7 @@ class PaymentMethodControllerTest {
 
     private User testUser;
     private String validAccessToken;
+    private SubscriptionPlan testPlan;
 
     @BeforeEach
     void setUp() {
@@ -85,6 +101,21 @@ class PaymentMethodControllerTest {
 
         // TokenBlacklistService 모킹 - 모든 토큰을 블랙리스트에 없다고 응답
         given(tokenBlacklistService.isBlacklisted(anyString())).willReturn(false);
+
+        // 테스트용 구독 플랜 생성
+        SubscriptionProduct product = SubscriptionProduct.builder()
+                .name("테스트 상품")
+                .description("테스트용 구독 상품")
+                .build();
+        subscriptionProductRepository.save(product);
+
+        testPlan = SubscriptionPlan.builder()
+                .product(product)
+                .price(new java.math.BigDecimal("9900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build();
+        subscriptionPlanRepository.save(testPlan);
     }
 
     @Test
@@ -217,6 +248,139 @@ class PaymentMethodControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("결제 수단 삭제 - 성공")
+    void deletePaymentMethod_Success() throws Exception {
+        // Given - 두 개의 결제 수단 생성 (첫 번째는 기본, 두 번째는 일반)
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod normalPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_normal",
+                "4444****5555****6666",
+                "MASTERCARD",
+                false
+        );
+        paymentMethodRepository.save(defaultPaymentMethod);
+        PaymentMethod saved = paymentMethodRepository.save(normalPaymentMethod);
+
+        // When & Then - 일반 결제 수단 삭제
+        mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isEmpty())
+                .andDo(document("delete-payment-method",
+                        resource(DeletePaymentMethodDocs.success())));
+    }
+
+    @Test
+    @DisplayName("결제 수단 삭제 - 실패 (활성 구독 + 기본 결제 수단)")
+    void deletePaymentMethod_ActiveSubscriptionWithDefaultFail() throws Exception {
+        // Given - 기본 결제 수단 생성
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod saved = paymentMethodRepository.save(defaultPaymentMethod);
+
+        // Given - 활성 구독 생성
+        Subscription subscription = Subscription.create(testUser.getId(), testPlan);
+        subscription.activate();
+        subscriptionRepository.save(subscription);
+
+        // When & Then
+        mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.message").value("활성 구독에 사용 중인 기본 결제 수단입니다. 구독을 해지하거나 다른 결제 수단을 기본으로 설정 후 삭제해주세요."));
+    }
+
+    @Test
+    @DisplayName("결제 수단 삭제 - 성공 (활성 구독 + 일반 결제 수단)")
+    void deletePaymentMethod_ActiveSubscriptionWithNonDefaultSuccess() throws Exception {
+        // Given - 기본 결제 수단과 일반 결제 수단 생성
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod normalPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_normal",
+                "4444****5555****6666",
+                "MASTERCARD",
+                false
+        );
+        paymentMethodRepository.save(defaultPaymentMethod);
+        PaymentMethod saved = paymentMethodRepository.save(normalPaymentMethod);
+
+        // Given - 활성 구독 생성
+        Subscription subscription = Subscription.create(testUser.getId(), testPlan);
+        subscription.activate();
+        subscriptionRepository.save(subscription);
+
+        // When & Then - 일반 결제 수단은 삭제 가능
+        mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("결제 수단 삭제 - 성공 (구독 없음 + 기본 결제 수단)")
+    void deletePaymentMethod_NoSubscriptionWithDefaultSuccess() throws Exception {
+        // Given - 기본 결제 수단만 생성 (활성 구독 없음)
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod saved = paymentMethodRepository.save(defaultPaymentMethod);
+
+        // When & Then - 활성 구독이 없으면 기본 결제 수단도 삭제 가능
+        mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("결제 수단 삭제 - 실패 (존재하지 않는 결제 수단)")
+    void deletePaymentMethod_NotFoundFail() throws Exception {
+        // Given - 존재하지 않는 ID
+        Long nonExistentId = 99999L;
+
+        // When & Then
+        mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", nonExistentId)
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("결제 수단을 찾을 수 없습니다."));
     }
 
     private BillingKeyInfo createMockBillingKeyInfo(String cardNumber, String cardBrand) {

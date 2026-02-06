@@ -35,4 +35,13 @@ public class PaymentMethodController {
         List<PaymentMethodResponse> response = paymentMethodService.getPaymentMethods(userId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
+
+    @DeleteMapping("/{paymentMethodId}")
+    public ResponseEntity<ApiResponse<Void>> deletePaymentMethod(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable Long paymentMethodId
+    ) {
+        paymentMethodService.deletePaymentMethod(userId, paymentMethodId);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
 }
