@@ -1,7 +1,5 @@
 package app.mockly.domain.product.service;
 
-import app.mockly.domain.auth.entity.User;
-import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.entity.Invoice;
 import app.mockly.domain.payment.entity.Payment;
@@ -16,18 +14,10 @@ import app.mockly.domain.product.dto.response.CreateSubscriptionResponse;
 import app.mockly.domain.product.dto.response.GetSubscriptionResponse;
 import app.mockly.domain.product.entity.*;
 import app.mockly.domain.product.repository.SubscriptionPlanRepository;
-import app.mockly.domain.product.repository.SubscriptionProductRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
-import io.portone.sdk.server.common.Card;
-import io.portone.sdk.server.common.CardBrand;
 import io.portone.sdk.server.common.PaymentAmountInput;
-import io.portone.sdk.server.payment.PayWithBillingKeyResponse;
-import io.portone.sdk.server.payment.billingkey.BillingKeyInfo;
-import io.portone.sdk.server.payment.billingkey.BillingKeyPaymentMethod;
-import io.portone.sdk.server.payment.billingkey.BillingKeyPaymentMethodCard;
-import io.portone.sdk.server.payment.billingkey.BillingKeyPaymentMethodEasyPay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -48,16 +37,25 @@ public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
-    private final SubscriptionProductRepository subscriptionProductRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
-    private final UserRepository userRepository;
 
     @Transactional
     public CreateSubscriptionResponse createSubscription(UUID userId, CreateSubscriptionRequest request) {
         Integer planId = request.planId();
         BigDecimal expectedPrice = request.expectedPrice();
-        String billingKey = request.billingKey();
+        Long paymentMethodId = request.paymentMethodId();
+
+        // PaymentMethod 조회 및 권한 검증
+        PaymentMethod paymentMethod = paymentMethodRepository
+                .findById(paymentMethodId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
+
+        if (!paymentMethod.getUser().getId().equals(userId)) {
+            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 결제 수단만 사용할 수 있습니다.");
+        }
+
+        String billingKey = paymentMethod.getBillingKey();
 
         // 플랜 조회 및 가격 검증
         SubscriptionPlan subscriptionPlan = subscriptionPlanRepository.findById(planId)
@@ -101,62 +99,20 @@ public class SubscriptionService {
         Payment payment = Payment.create(invoice, subscriptionPlan.getPrice(), subscriptionPlan.getCurrency());
         paymentRepository.save(payment);
 
-        // Billing Key 조회 및 검증
-        BillingKeyInfo billingKeyInfo = portOneService.getBillingKey(billingKey);
-
         // 결제 요청
         try {
             PaymentAmountInput paymentAmountInput = new PaymentAmountInput(subscriptionPlan.getPrice().longValue(), null, null);
             String orderName = subscriptionPlan.getProduct().getName() + " - " + subscriptionPlan.getBillingCycle().name();
-            PayWithBillingKeyResponse response = portOneService.payWithBillingKey(
+            portOneService.payWithBillingKey(
                     payment.getId(), billingKey, orderName, subscriptionPlan.getCurrency().toPortOneCurrency(), paymentAmountInput);
 
-            if (!(billingKeyInfo instanceof BillingKeyInfo.Recognized recognized)) {
-                throw new BusinessException(ApiStatusCode.BAD_REQUEST, "유효하지 않은 빌링키입니다.");
-            }
-
-            // 결제 수단 정보 추출
-            PaymentMethodType paymentMethodType = PaymentMethodType.UNKNOWN;
-            String cardNumber = null;
-            String cardBrand = null;
-            List<BillingKeyPaymentMethod> methods = recognized.getMethods();
-            if (methods != null && !methods.isEmpty()) {
-                BillingKeyPaymentMethod billingKeyPaymentMethod = methods.getFirst();
-                if (billingKeyPaymentMethod instanceof BillingKeyPaymentMethodCard cardMethod) {
-                    paymentMethodType = PaymentMethodType.CARD;
-
-                    Card card = cardMethod.getCard();
-                    cardNumber = card.getNumber();
-                    CardBrand brand = card.getBrand();
-                    if (brand != null) {
-                        cardBrand = brand.toString();
-                    }
-                } else if (billingKeyPaymentMethod instanceof BillingKeyPaymentMethodEasyPay easyPayMethod) {
-                    paymentMethodType = PaymentMethodType.EASY_PAY;
-                    // TODO: EasyPay 정보 추출 (필요 시)
-                }
-            }
-            payment.markAsPaid(paymentMethodType);
+            // 결제 성공 처리 (현재 카드만 지원)
+            payment.markAsPaid(PaymentMethodType.CARD);
             invoice.markAsPaid();
             subscription.activate();
 
-            // PaymentMethod 저장 or 업데이트
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "사용자를 찾을 수 없습니다."));
-
-            PaymentMethod activePaymentMethod = paymentMethodRepository.findByUserIdAndIsActiveTrue(userId)
-                    .orElse(null);
-
-            if (activePaymentMethod != null) {
-                if (activePaymentMethod.getBillingKey().equals(billingKey)) {
-                    return CreateSubscriptionResponse.from(subscription);
-                }
-                activePaymentMethod.deactivate();
-            }
-            PaymentMethod newPaymentMethod = PaymentMethod.create(user, billingKey, cardNumber, cardBrand, true);
-            paymentMethodRepository.save(newPaymentMethod);
-
-            log.info("구독 생성 성공 - userId: {}, subscriptionId: {}, paymentId: {}", userId, subscription.getId(), payment.getId());
+            log.info("구독 생성 성공 - userId: {}, subscriptionId: {}, paymentId: {}, paymentMethodId: {}",
+                    userId, subscription.getId(), payment.getId(), paymentMethodId);
 
             return CreateSubscriptionResponse.from(subscription);
         } catch (Exception e) {
