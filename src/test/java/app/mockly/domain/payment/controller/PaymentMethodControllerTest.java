@@ -7,6 +7,7 @@ import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.controller.docs.AddPaymentMethodDocs;
+import app.mockly.domain.payment.controller.docs.GetPaymentMethodsDocs;
 import app.mockly.domain.payment.dto.request.AddPaymentMethodRequest;
 import app.mockly.domain.payment.entity.PaymentMethod;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
@@ -34,6 +35,7 @@ import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -142,6 +144,79 @@ class PaymentMethodControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.isDefault").value(false));
+    }
+
+    @Test
+    @DisplayName("결제 수단 목록 조회 - 성공 (빈 목록)")
+    void getPaymentMethods_Empty_Success() throws Exception {
+        // Given - 결제 수단 없음
+
+        // When & Then
+        mockMvc.perform(get("/api/payment-methods")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty())
+                .andDo(document("get-payment-methods",
+                        resource(GetPaymentMethodsDocs.success())));
+    }
+
+    @Test
+    @DisplayName("결제 수단 목록 조회 - 성공 (단일 결제 수단)")
+    void getPaymentMethods_Single_Success() throws Exception {
+        // Given
+        PaymentMethod paymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_123",
+                "1234****5678****9012",
+                "VISA",
+                true
+        );
+        paymentMethodRepository.save(paymentMethod);
+
+        // When & Then
+        mockMvc.perform(get("/api/payment-methods")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].cardBrand").value("VISA"))
+                .andExpect(jsonPath("$.data[0].isDefault").value(true));
+    }
+
+    @Test
+    @DisplayName("결제 수단 목록 조회 - 성공 (복수 결제 수단)")
+    void getPaymentMethods_Multiple_Success() throws Exception {
+        // Given
+        PaymentMethod pm1 = PaymentMethod.create(
+                testUser,
+                "billing_key_1",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod pm2 = PaymentMethod.create(
+                testUser,
+                "billing_key_2",
+                "4444****5555****6666",
+                "MASTERCARD",
+                false
+        );
+        paymentMethodRepository.save(pm1);
+        paymentMethodRepository.save(pm2);
+
+        // When & Then
+        mockMvc.perform(get("/api/payment-methods")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(2));
     }
 
     private BillingKeyInfo createMockBillingKeyInfo(String cardNumber, String cardBrand) {

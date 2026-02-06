@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -24,6 +25,14 @@ public class PaymentMethodController {
             @Valid @RequestBody AddPaymentMethodRequest request
     ) {
         PaymentMethodResponse response = paymentMethodService.addPaymentMethod(userId, request.billingKey());
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<PaymentMethodResponse>>> getPaymentMethods(
+            @AuthenticationPrincipal UUID userId
+    ) {
+        List<PaymentMethodResponse> response = paymentMethodService.getPaymentMethods(userId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

@@ -51,6 +51,13 @@ public class PaymentMethodService {
         return PaymentMethodResponse.from(saved);
     }
 
+    public List<PaymentMethodResponse> getPaymentMethods(UUID userId) {
+        List<PaymentMethod> paymentMethods = paymentMethodRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId);
+        return paymentMethods.stream()
+                .map(PaymentMethodResponse::from)
+                .toList();
+    }
+
     private static Card getCard(BillingKeyInfo billingKeyInfo) {
         if (!(billingKeyInfo instanceof BillingKeyInfo.Recognized recognized)) {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "유효하지 않은 빌링키입니다.");
