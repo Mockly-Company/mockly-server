@@ -44,4 +44,13 @@ public class PaymentMethodController {
         paymentMethodService.deletePaymentMethod(userId, paymentMethodId);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
+
+    @PatchMapping("/{paymentMethodId}/default")
+    public ResponseEntity<ApiResponse<PaymentMethodResponse>> setDefaultPaymentMethod(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable Long paymentMethodId
+    ) {
+        PaymentMethodResponse response = paymentMethodService.setDefaultPaymentMethod(userId, paymentMethodId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
 }

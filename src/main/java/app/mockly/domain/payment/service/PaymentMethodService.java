@@ -79,6 +79,28 @@ public class PaymentMethodService {
                 userId, paymentMethodId, hasActiveSubscription);
     }
 
+    @Transactional
+    public PaymentMethodResponse setDefaultPaymentMethod(UUID userId, Long paymentMethodId) {
+        PaymentMethod paymentMethod = paymentMethodRepository.findByIdAndUserIdAndIsActiveTrue(paymentMethodId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
+        if (paymentMethod.isDefault()) {
+            return PaymentMethodResponse.from(paymentMethod);
+        }
+
+        Long oldDefaultId = paymentMethodRepository.findByUserIdAndIsDefaultTrueAndIsActiveTrue(userId)
+                .map(currentDefault -> {
+                    currentDefault.unsetDefault();
+                    paymentMethodRepository.save(currentDefault);
+                    return currentDefault.getId();
+                })
+                .orElse(null);
+        paymentMethod.setAsDefault();
+        PaymentMethod saved = paymentMethodRepository.save(paymentMethod);
+
+        log.info("기본 결제 수단 변경 - userId: {}, oldDefaultId: {}, newDefaultId: {}", userId, oldDefaultId, paymentMethodId);
+        return PaymentMethodResponse.from(saved);
+    }
+
     private static Card getCard(BillingKeyInfo billingKeyInfo) {
         if (!(billingKeyInfo instanceof BillingKeyInfo.Recognized recognized)) {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "유효하지 않은 빌링키입니다.");

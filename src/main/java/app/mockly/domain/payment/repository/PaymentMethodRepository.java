@@ -13,4 +13,6 @@ public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, Lo
     List<PaymentMethod> findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(UUID userId);
 
     Optional<PaymentMethod> findByIdAndUserIdAndIsActiveTrue(Long id, UUID userId);
+
+    Optional<PaymentMethod> findByUserIdAndIsDefaultTrueAndIsActiveTrue(UUID userId);
 }

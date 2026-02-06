@@ -9,6 +9,7 @@ import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.controller.docs.AddPaymentMethodDocs;
 import app.mockly.domain.payment.controller.docs.DeletePaymentMethodDocs;
 import app.mockly.domain.payment.controller.docs.GetPaymentMethodsDocs;
+import app.mockly.domain.payment.controller.docs.SetDefaultPaymentMethodDocs;
 import app.mockly.domain.payment.dto.request.AddPaymentMethodRequest;
 import app.mockly.domain.payment.entity.PaymentMethod;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
@@ -42,6 +43,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -375,6 +377,79 @@ class PaymentMethodControllerTest {
 
         // When & Then
         mockMvc.perform(delete("/api/payment-methods/{paymentMethodId}", nonExistentId)
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("결제 수단을 찾을 수 없습니다."));
+    }
+
+    @Test
+    @DisplayName("기본 결제 수단 변경 - 성공")
+    void setDefaultPaymentMethod_Success() throws Exception {
+        // Given - 두 개의 결제 수단 생성 (첫 번째는 기본, 두 번째는 일반)
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod normalPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_normal",
+                "4444****5555****6666",
+                "MASTERCARD",
+                false
+        );
+        paymentMethodRepository.save(defaultPaymentMethod);
+        PaymentMethod saved = paymentMethodRepository.save(normalPaymentMethod);
+
+        // When & Then - 일반 결제 수단을 기본으로 변경
+        mockMvc.perform(patch("/api/payment-methods/{paymentMethodId}/default", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(saved.getId()))
+                .andExpect(jsonPath("$.data.cardBrand").value("MASTERCARD"))
+                .andExpect(jsonPath("$.data.isDefault").value(true))
+                .andDo(document("set-default-payment-method",
+                        resource(SetDefaultPaymentMethodDocs.success())));
+    }
+
+    @Test
+    @DisplayName("기본 결제 수단 변경 - 성공 (이미 기본인 경우, idempotent)")
+    void setDefaultPaymentMethod_AlreadyDefaultSuccess() throws Exception {
+        // Given - 기본 결제 수단 생성
+        PaymentMethod defaultPaymentMethod = PaymentMethod.create(
+                testUser,
+                "billing_key_default",
+                "1111****2222****3333",
+                "VISA",
+                true
+        );
+        PaymentMethod saved = paymentMethodRepository.save(defaultPaymentMethod);
+
+        // When & Then - 이미 기본인 결제 수단을 다시 기본으로 설정
+        mockMvc.perform(patch("/api/payment-methods/{paymentMethodId}/default", saved.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(saved.getId()))
+                .andExpect(jsonPath("$.data.isDefault").value(true));
+    }
+
+    @Test
+    @DisplayName("기본 결제 수단 변경 - 실패 (존재하지 않는 결제 수단)")
+    void setDefaultPaymentMethod_NotFoundFail() throws Exception {
+        // Given - 존재하지 않는 ID
+        Long nonExistentId = 99999L;
+
+        // When & Then
+        mockMvc.perform(patch("/api/payment-methods/{paymentMethodId}/default", nonExistentId)
                         .header("Authorization", "Bearer " + validAccessToken))
                 .andDo(print())
                 .andExpect(status().isNotFound())
