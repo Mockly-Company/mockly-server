@@ -1,6 +1,7 @@
 package app.mockly.domain.product.controller;
 
 import app.mockly.domain.product.dto.request.CreateSubscriptionRequest;
+import app.mockly.domain.product.dto.request.UpdatePaymentMethodRequest;
 import app.mockly.domain.product.dto.response.CancelSubscriptionResponse;
 import app.mockly.domain.product.dto.response.CreateSubscriptionResponse;
 import app.mockly.domain.product.dto.response.GetSubscriptionResponse;
@@ -43,5 +44,14 @@ public class SubscriptionController {
             @AuthenticationPrincipal UUID userId) {
         CancelSubscriptionResponse response = subscriptionService.cancelSubscription(userId, id);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @PutMapping("/{id}/payment-method")
+    public ResponseEntity<ApiResponse<Void>> updatePaymentMethod(
+            @PathVariable Long id,
+            @RequestBody @Valid UpdatePaymentMethodRequest request,
+            @AuthenticationPrincipal UUID userId) {
+        subscriptionService.updatePaymentMethod(userId, id, request.paymentMethodId());
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 }
