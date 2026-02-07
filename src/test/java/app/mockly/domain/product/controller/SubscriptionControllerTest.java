@@ -139,7 +139,7 @@ class SubscriptionControllerTest {
         CreateSubscriptionRequest request = new CreateSubscriptionRequest(
                 basicMonthlyPlan.getId(),
                 new BigDecimal("9900"),
-                "billing_key_test_mock"
+                1L
         );
 
         mockMvc.perform(post("/api/subscriptions")
@@ -164,7 +164,7 @@ class SubscriptionControllerTest {
         CreateSubscriptionRequest request = new CreateSubscriptionRequest(
                 freePlan.getId(),
                 BigDecimal.ZERO,
-                "billing_key_dummy"
+                1L
         );
 
         mockMvc.perform(post("/api/subscriptions")
@@ -186,7 +186,7 @@ class SubscriptionControllerTest {
         CreateSubscriptionRequest request = new CreateSubscriptionRequest(
                 99999,
                 new BigDecimal("9900"),
-                "billing_key_dummy"
+                1L
         );
 
         mockMvc.perform(post("/api/subscriptions")

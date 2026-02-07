@@ -34,6 +34,7 @@ import java.util.UUID;
 public class SubscriptionService {
     private final PaymentMethodRepository paymentMethodRepository;
     private final PortOneService portOneService;
+    private final PaymentScheduleService paymentScheduleService;
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
@@ -173,121 +174,14 @@ public class SubscriptionService {
 
     @Transactional
     public void updatePaymentMethod(UUID userId, Long subscriptionId, Long newPaymentMethodId) {
-        Subscription subscription = subscriptionRepository.findById(subscriptionId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
-        if (!subscription.getUserId().equals(userId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 구독만 수정할 수 있습니다.");
-        }
-        if (!subscription.isActive()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "활성 상태인 구독만 결제 수단을 변경할 수 있습니다.");
-        }
+        Subscription subscription = validateAndGetSubscription(userId, subscriptionId);
+        PaymentMethod newPaymentMethod = validateAndGetPaymentMethod(userId, newPaymentMethodId);
+        validatePaymentChangeTimestamp(subscription);
 
-        PaymentMethod newPaymentMethod = paymentMethodRepository
-                .findById(newPaymentMethodId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
-        if (!newPaymentMethod.getUser().getId().equals(userId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 결제 수단만 사용할 수 있습니다.");
-        }
-        if (!newPaymentMethod.isActive()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "비활성화된 결제 수단은 사용할 수 없습니다.");
-        }
-
-        // 다음 결제 1시간 전 변경 차단
-        LocalDateTime nextPaymentTime = subscription.getCurrentPeriodEnd();
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime oneHourBeforePayment = nextPaymentTime.minusHours(1);
-
-        if (now.isAfter(oneHourBeforePayment)) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST,
-                    "다음 결제 1시간 전에는 결제 수단을 변경할 수 없습니다. 다음 결제일: " + nextPaymentTime);
-        }
-
-        String oldScheduleId = subscription.getCurrentPaymentScheduleId();
-        if (oldScheduleId != null) {
-            try {
-                portOneService.revokePaymentSchedule(oldScheduleId);
-                log.info("결제 수단 변경: 기존 스케줄 취소 완료 - subscriptionId: {}, oldScheduleId: {}",
-                        subscriptionId, oldScheduleId);
-            } catch (Exception e) {
-                log.error("결제 수단 변경: 기존 스케줄 취소 실패 - subscriptionId: {}, oldScheduleId: {}",
-                        subscriptionId, oldScheduleId, e);
-                throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR,
-                        "기존 결제 스케줄 취소 중 오류가 발생했습니다.");
-            }
-        }
-
-        try {
-            LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
-            LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
-                    nextPeriodStart,
-                    subscription.getSubscriptionPlan().getBillingCycle()
-            );
-
-            String newScheduleId = createNextPaymentSchedule(
-                    subscription,
-                    newPaymentMethod.getBillingKey(),
-                    nextPeriodStart,
-                    nextPeriodEnd
-            );
-
-            log.info("결제 수단 변경 완료 - subscriptionId: {}, oldPaymentMethodId: {}, newPaymentMethodId: {}, newScheduleId: {}",
-                    subscriptionId, "unknown", newPaymentMethodId, newScheduleId);
-        } catch (Exception e) {
-            log.error("결제 수단 변경: 새 스케줄 생성 실패 - subscriptionId: {}, newPaymentMethodId: {}",
-                    subscriptionId, newPaymentMethodId, e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR,
-                    "새 결제 스케줄 생성 중 오류가 발생했습니다.");
-        }
+        paymentScheduleService.replaceSchedule(subscription, newPaymentMethod);
     }
 
-    /**
-     * Invoice/Payment 생성 및 스케줄 등록
-     * @return 생성된 scheduleId
-     */
-    private String createNextPaymentSchedule(
-            Subscription subscription,
-            String billingKey,
-            LocalDateTime periodStart,
-            LocalDateTime periodEnd
-    ) {
-        Invoice invoice = Invoice.create(
-                subscription,
-                subscription.getSubscriptionPlan().getPrice(),
-                subscription.getSubscriptionPlan().getCurrency(),
-                periodStart,
-                periodEnd
-        );
-        invoiceRepository.save(invoice);
 
-        Payment payment = Payment.create(
-                invoice,
-                subscription.getSubscriptionPlan().getPrice(),
-                subscription.getSubscriptionPlan().getCurrency()
-        );
-        paymentRepository.save(payment);
-
-        // 스케줄 예약 (UTC 기준)
-        java.time.Instant timeToPay = periodStart
-                .atZone(java.time.ZoneId.of("UTC"))
-                .toInstant();
-        String scheduleId = portOneService.createPaymentSchedule(
-                payment.getId(),
-                billingKey,
-                subscription.getSubscriptionPlan().getProduct().getName() + " - 갱신",
-                subscription.getSubscriptionPlan().getCurrency().toPortOneCurrency(),
-                new PaymentAmountInput(subscription.getSubscriptionPlan().getPrice().longValue(), null, null),
-                timeToPay
-        );
-
-        subscription.setCurrentPaymentScheduleId(scheduleId);
-        return scheduleId;
-    }
-
-    /**
-     * 첫 결제 후 스케줄 생성 - Webhook에서 호출
-     * @param subscription 구독 정보
-     * @param billingKey 첫 결제에 사용된 빌링키 (갱신 결제에도 동일한 키 사용)
-     */
     @Transactional
     public void createFirstPaymentSchedule(Subscription subscription, String billingKey) {
         try {
@@ -297,7 +191,7 @@ public class SubscriptionService {
                     subscription.getSubscriptionPlan().getBillingCycle()
             );
 
-            String scheduleId = createNextPaymentSchedule(
+            String scheduleId = paymentScheduleService.createSchedule(
                     subscription,
                     billingKey,
                     nextPeriodStart,
@@ -316,11 +210,6 @@ public class SubscriptionService {
         }
     }
 
-    /**
-     * 구독 갱신 - Webhook에서 호출
-     * @param subscription 구독 정보
-     * @param billingKey 갱신 결제에 사용된 빌링키 (다음 스케줄에도 동일한 키 사용)
-     */
     @Transactional
     public void renewSubscription(Subscription subscription, String billingKey) {
         try {
@@ -332,7 +221,7 @@ public class SubscriptionService {
                     subscription.getSubscriptionPlan().getBillingCycle()
             );
 
-            String scheduleId = createNextPaymentSchedule(
+            String scheduleId = paymentScheduleService.createSchedule(
                     subscription,
                     billingKey,
                     nextPeriodStart,
@@ -353,9 +242,42 @@ public class SubscriptionService {
         }
     }
 
-    /**
-     * 다음 기간 종료일 계산
-     */
+    private Subscription validateAndGetSubscription(UUID userId, Long subscriptionId) {
+        Subscription subscription = subscriptionRepository.findById(subscriptionId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
+
+        if (!subscription.getUserId().equals(userId)) {
+            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 구독만 수정할 수 있습니다.");
+        }
+        if (!subscription.isActive()) {
+            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "활성 상태인 구독만 결제 수단을 변경할 수 있습니다.");
+        }
+        return subscription;
+    }
+
+    private PaymentMethod validateAndGetPaymentMethod(UUID userId, Long paymentMethodId) {
+        PaymentMethod paymentMethod = paymentMethodRepository.findById(paymentMethodId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
+
+        if (!paymentMethod.getUser().getId().equals(userId)) {
+            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 결제 수단만 사용할 수 있습니다.");
+        }
+        if (!paymentMethod.isActive()) {
+            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "비활성화된 결제 수단은 사용할 수 없습니다.");
+        }
+        return paymentMethod;
+    }
+
+    private void validatePaymentChangeTimestamp(Subscription subscription) {
+        LocalDateTime nextPaymentTime = subscription.getCurrentPeriodEnd();
+        LocalDateTime oneHourBeforePayment = nextPaymentTime.minusHours(1);
+
+        if (LocalDateTime.now().isAfter(oneHourBeforePayment)) {
+            throw new BusinessException(ApiStatusCode.BAD_REQUEST,
+                    "다음 결제 1시간 전에는 결제 수단을 변경할 수 없습니다. 다음 결제일: " + nextPaymentTime);
+        }
+    }
+
     private LocalDateTime calculateNextPeriodEnd(LocalDateTime start, BillingCycle billingCycle) {
         return switch (billingCycle) {
             case MONTHLY -> start.plusMonths(1);
