@@ -73,13 +73,33 @@ public class WebhookService {
         payment.getInvoice().markAsPaid();
 
         Subscription subscription = payment.getInvoice().getSubscription();
+
+        // 중복 방지: 이미 스케줄이 생성되어 있으면 동기 처리 완료된 것으로 간주
+        if (subscription.getCurrentPaymentScheduleId() != null) {
+            log.info("이미 처리됨 (스케줄 존재), Webhook 스킵 - subscriptionId: {}, scheduleId: {}",
+                    subscription.getId(), subscription.getCurrentPaymentScheduleId());
+            return;
+        }
+
         if (subscription.getStatus() == SubscriptionStatus.PENDING) { // 첫 결제: activate + 첫 스케줄 생성
             subscription.activate();
-            subscriptionService.createFirstPaymentSchedule(subscription, billingKey);
-            log.info("첫 결제 완료 및 구독 활성화: {}, billingKey: {}", subscription.getId(), billingKey);
+            try {
+                subscriptionService.createFirstPaymentSchedule(subscription, billingKey);
+                log.info("첫 결제 완료 및 구독 활성화 (Webhook 보정): {}, billingKey: {}", subscription.getId(), billingKey);
+            } catch (Exception e) {
+                subscription.markAsPastDue();
+                log.error("첫 결제 스케줄 생성 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
+                        subscription.getId(), billingKey, e);
+            }
         } else if (subscription.isActive() && !subscription.isCanceled()) { // 갱신 결제: 구독 갱신 + 다음 스케줄 생성
-            subscriptionService.renewSubscription(subscription, billingKey);
-            log.info("구독 갱신 완료: {}, billingKey: {}", subscription.getId(), billingKey);
+            try {
+                subscriptionService.renewSubscription(subscription, billingKey);
+                log.info("구독 갱신 완료 (Webhook): {}, billingKey: {}", subscription.getId(), billingKey);
+            } catch (Exception e) {
+                subscription.markAsPastDue();
+                log.error("구독 갱신 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
+                        subscription.getId(), billingKey, e);
+            }
         }
     }
 
@@ -110,7 +130,17 @@ public class WebhookService {
 
         payment.markAsFailed(failReason);
         payment.getInvoice().markAsFailed();
-        log.info("결제 실패 - paymentId: {}, 실패 이유: {}", paymentId, failReason);
+
+        // 갱신 결제 실패 시 구독을 PAST_DUE 상태로 변경
+        Subscription subscription = payment.getInvoice().getSubscription();
+        if (subscription.isActive()) {
+            subscription.markAsPastDue();
+            log.warn("갱신 결제 실패로 구독 PAST_DUE 전환 - subscriptionId: {}, paymentId: {}, 실패 이유: {}",
+                    subscription.getId(), paymentId, failReason);
+        } else {
+            log.info("결제 실패 - paymentId: {}, subscriptionStatus: {}, 실패 이유: {}",
+                    paymentId, subscription.getStatus(), failReason);
+        }
     }
 
     private void handleTransactionCanceled(WebhookTransactionCancelledData data) {

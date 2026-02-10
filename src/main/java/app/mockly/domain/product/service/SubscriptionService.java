@@ -1,11 +1,9 @@
 package app.mockly.domain.product.service;
 
 import app.mockly.domain.payment.client.PortOneService;
-import app.mockly.domain.payment.entity.Invoice;
-import app.mockly.domain.payment.entity.Payment;
-import app.mockly.domain.payment.entity.PaymentMethod;
-import app.mockly.domain.payment.entity.PaymentMethodType;
+import app.mockly.domain.payment.entity.*;
 import app.mockly.domain.payment.repository.InvoiceRepository;
+import app.mockly.domain.payment.repository.OutboxEventRepository;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
 import app.mockly.domain.payment.repository.PaymentRepository;
 import app.mockly.domain.product.dto.request.CreateSubscriptionRequest;
@@ -40,6 +38,7 @@ public class SubscriptionService {
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+    private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
     public CreateSubscriptionResponse createSubscription(UUID userId, CreateSubscriptionRequest request) {
@@ -111,6 +110,8 @@ public class SubscriptionService {
             payment.markAsPaid(PaymentMethodType.CARD);
             invoice.markAsPaid();
             subscription.activate();
+
+            outboxEventRepository.save(OutboxEvent.scheduleCreate(subscription.getId(), billingKey));
 
             log.info("구독 생성 성공 - userId: {}, subscriptionId: {}, paymentId: {}, paymentMethodId: {}",
                     userId, subscription.getId(), payment.getId(), paymentMethodId);
@@ -184,62 +185,51 @@ public class SubscriptionService {
 
     @Transactional
     public void createFirstPaymentSchedule(Subscription subscription, String billingKey) {
-        try {
-            LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
-            LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
-                    nextPeriodStart,
-                    subscription.getSubscriptionPlan().getBillingCycle()
-            );
+        LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
+        LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
+                nextPeriodStart,
+                subscription.getSubscriptionPlan().getBillingCycle()
+        );
+        String scheduleId = paymentScheduleService.createSchedule(subscription, billingKey, nextPeriodStart, nextPeriodEnd);
 
-            String scheduleId = paymentScheduleService.createSchedule(
-                    subscription,
-                    billingKey,
-                    nextPeriodStart,
-                    nextPeriodEnd
-            );
+        log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 다음 결제일: {}",
+                subscription.getId(), scheduleId, billingKey, nextPeriodStart);
+    }
 
-            log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 다음 결제일: {}",
-                    subscription.getId(),
-                    scheduleId,
-                    billingKey,
-                    nextPeriodStart);
+    @Transactional
+    public void processScheduleCreation(Long subscriptionId) {
+        OutboxEvent event = outboxEventRepository.findByAggregateIdAndEventTypeAndStatus(subscriptionId, "SCHEDULE_CREATE", OutboxEventStatus.PENDING)
+                .orElse(null);
 
-        } catch (Exception e) {
-            log.error("첫 결제 스케줄 생성 실패 - subscriptionId: {}", subscription.getId(), e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "스케줄 생성 실패: " + e.getMessage());
+        if (event == null) return;
+
+        Subscription subscription = subscriptionRepository.findById(subscriptionId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
+
+        // 이미 스케줄이 생성되어 있는 경우, 중복 방지 (ex. 기본 결제 수단 변경)
+        if (subscription.getCurrentPaymentScheduleId() != null) {
+            event.markAsProcessed();
+            return;
         }
+
+        String billingKey = event.extractBillingKey();
+        createFirstPaymentSchedule(subscription, billingKey);
+        event.markAsProcessed();
     }
 
     @Transactional
     public void renewSubscription(Subscription subscription, String billingKey) {
-        try {
-            subscription.extendPeriod();
+        subscription.extendPeriod();
 
-            LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
-            LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
-                    nextPeriodStart,
-                    subscription.getSubscriptionPlan().getBillingCycle()
-            );
+        LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
+        LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
+                nextPeriodStart,
+                subscription.getSubscriptionPlan().getBillingCycle()
+        );
+        String scheduleId = paymentScheduleService.createSchedule(subscription, billingKey, nextPeriodStart, nextPeriodEnd);
 
-            String scheduleId = paymentScheduleService.createSchedule(
-                    subscription,
-                    billingKey,
-                    nextPeriodStart,
-                    nextPeriodEnd
-            );
-
-            log.info("구독 갱신 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
-                    subscription.getId(),
-                    scheduleId,
-                    billingKey,
-                    subscription.getCurrentPeriodStart(),
-                    subscription.getCurrentPeriodEnd(),
-                    nextPeriodStart);
-
-        } catch (Exception e) {
-            log.error("구독 갱신 실패 - subscriptionId: {}, billingKey: {}", subscription.getId(), billingKey, e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "구독 갱신 실패: " + e.getMessage());
-        }
+        log.info("구독 갱신 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
+                subscription.getId(), scheduleId, billingKey, subscription.getCurrentPeriodStart(), subscription.getCurrentPeriodEnd(), nextPeriodStart);
     }
 
     private Subscription validateAndGetSubscription(UUID userId, Long subscriptionId) {

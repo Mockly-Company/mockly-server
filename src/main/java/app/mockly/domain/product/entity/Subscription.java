@@ -74,12 +74,20 @@ public class Subscription extends BaseEntity {
         this.canceledAt = LocalDateTime.now();
     }
 
+    public void markAsPastDue() {
+        this.status = SubscriptionStatus.PAST_DUE;
+    }
+
     public boolean isActive() {
         return status == SubscriptionStatus.ACTIVE;
     }
 
     public boolean isCanceled() {
         return status == SubscriptionStatus.CANCELED;
+    }
+
+    public boolean isPastDue() {
+        return status == SubscriptionStatus.PAST_DUE;
     }
 
     public void extendPeriod() {

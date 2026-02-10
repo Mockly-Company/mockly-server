@@ -25,12 +25,7 @@ public class PaymentScheduleService {
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
 
-    public String createSchedule(
-            Subscription subscription,
-            String billingKey,
-            LocalDateTime periodStart,
-            LocalDateTime periodEnd
-    ) {
+    public String createSchedule(Subscription subscription, String billingKey, LocalDateTime periodStart, LocalDateTime periodEnd) {
         Invoice invoice = Invoice.create(
                 subscription,
                 subscription.getSubscriptionPlan().getPrice(),
