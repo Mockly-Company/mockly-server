@@ -1,7 +1,9 @@
 package app.mockly.domain.payment.service;
 
+import app.mockly.domain.payment.dto.response.GetInvoiceDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentsResponse;
+import app.mockly.domain.payment.entity.Invoice;
 import app.mockly.domain.payment.entity.Payment;
 import app.mockly.domain.payment.entity.PaymentStatus;
 import app.mockly.domain.payment.repository.PaymentRepository;
@@ -22,7 +24,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class PaymentQueryService {
+public class PaymentService {
     private static final int MAX_PAGE_SIZE = 20;
 
     private final PaymentRepository paymentRepository;
@@ -60,5 +62,12 @@ public class PaymentQueryService {
         Payment payment = paymentRepository.findByIdAndUserId(paymentId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 내역을 찾을 수 없습니다."));
         return GetPaymentDetailResponse.from(payment);
+    }
+
+    public GetInvoiceDetailResponse getInvoiceDetail(UUID userId, String paymentId) {
+        Payment payment = paymentRepository.findByIdAndUserId(paymentId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 내역을 찾을 수 없습니다."));
+        Invoice invoice = payment.getInvoice();
+        return GetInvoiceDetailResponse.from(invoice);
     }
 }

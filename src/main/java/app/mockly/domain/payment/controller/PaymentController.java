@@ -1,9 +1,10 @@
 package app.mockly.domain.payment.controller;
 
+import app.mockly.domain.payment.dto.response.GetInvoiceDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentsResponse;
 import app.mockly.domain.payment.entity.PaymentStatus;
-import app.mockly.domain.payment.service.PaymentQueryService;
+import app.mockly.domain.payment.service.PaymentService;
 import app.mockly.global.common.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -22,7 +23,7 @@ import java.util.UUID;
 @RequestMapping("/api/payments")
 @RequiredArgsConstructor
 public class PaymentController {
-    private final PaymentQueryService paymentQueryService;
+    private final PaymentService paymentService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<GetPaymentsResponse>> getPayments(
@@ -33,7 +34,7 @@ public class PaymentController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate endDate
     ) {
-        GetPaymentsResponse response = paymentQueryService.getPayments(
+        GetPaymentsResponse response = paymentService.getPayments(
                 userId, page, size, status, startDate, endDate);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
@@ -43,7 +44,16 @@ public class PaymentController {
             @AuthenticationPrincipal UUID userId,
             @PathVariable String paymentId
     ) {
-        GetPaymentDetailResponse response = paymentQueryService.getPaymentDetail(userId, paymentId);
+        GetPaymentDetailResponse response = paymentService.getPaymentDetail(userId, paymentId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/{paymentId}/invoice")
+    public ResponseEntity<ApiResponse<GetInvoiceDetailResponse>> getInvoiceDetail(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable String paymentId
+    ) {
+        GetInvoiceDetailResponse response = paymentService.getInvoiceDetail(userId, paymentId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }
