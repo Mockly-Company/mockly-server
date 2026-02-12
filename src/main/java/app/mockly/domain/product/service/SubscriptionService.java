@@ -99,6 +99,8 @@ public class SubscriptionService {
         Payment payment = Payment.create(invoice, subscriptionPlan.getPrice(), subscriptionPlan.getCurrency());
         paymentRepository.save(payment);
 
+        outboxEventRepository.save(OutboxEvent.scheduleCreate(subscription.getId(), billingKey));
+
         // 결제 요청
         try {
             PaymentAmountInput paymentAmountInput = new PaymentAmountInput(subscriptionPlan.getPrice().longValue(), null, null);
@@ -111,8 +113,6 @@ public class SubscriptionService {
             invoice.markAsPaid();
             subscription.activate();
 
-            outboxEventRepository.save(OutboxEvent.scheduleCreate(subscription.getId(), billingKey));
-
             log.info("구독 생성 성공 - userId: {}, subscriptionId: {}, paymentId: {}, paymentMethodId: {}",
                     userId, subscription.getId(), payment.getId(), paymentMethodId);
 
@@ -123,7 +123,8 @@ public class SubscriptionService {
             payment.markAsFailed(e.getMessage());
             invoice.markAsFailed();
 
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 처리 중 오류가 발생했습니다."); // TODO: Api Status Code 추가하기 or Exception 추가하기
+            // Outbox도 함께 롤백됨 (같은 @Transactional)
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 처리 중 오류가 발생했습니다.");
         }
     }
 
