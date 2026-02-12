@@ -90,6 +90,10 @@ public class Subscription extends BaseEntity {
         return status == SubscriptionStatus.PAST_DUE;
     }
 
+    public void expire() {
+        this.status = SubscriptionStatus.EXPIRED;
+    }
+
     public void extendPeriod() {
         LocalDateTime now = LocalDateTime.now();
         this.currentPeriodStart = now;
