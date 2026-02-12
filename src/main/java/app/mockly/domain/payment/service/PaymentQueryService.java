@@ -1,9 +1,12 @@
 package app.mockly.domain.payment.service;
 
+import app.mockly.domain.payment.dto.response.GetPaymentDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentsResponse;
 import app.mockly.domain.payment.entity.Payment;
 import app.mockly.domain.payment.entity.PaymentStatus;
 import app.mockly.domain.payment.repository.PaymentRepository;
+import app.mockly.global.common.ApiStatusCode;
+import app.mockly.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -51,5 +54,11 @@ public class PaymentQueryService {
 
     private Instant toEndOfDay(LocalDate date) { // 다음날의 시작
         return date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
+    public GetPaymentDetailResponse getPaymentDetail(UUID userId, String paymentId) {
+        Payment payment = paymentRepository.findByIdAndUserId(paymentId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 내역을 찾을 수 없습니다."));
+        return GetPaymentDetailResponse.from(payment);
     }
 }

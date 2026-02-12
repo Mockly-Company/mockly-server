@@ -1,5 +1,6 @@
 package app.mockly.domain.payment.controller;
 
+import app.mockly.domain.payment.dto.response.GetPaymentDetailResponse;
 import app.mockly.domain.payment.dto.response.GetPaymentsResponse;
 import app.mockly.domain.payment.entity.PaymentStatus;
 import app.mockly.domain.payment.service.PaymentQueryService;
@@ -9,6 +10,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +21,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/payments")
 @RequiredArgsConstructor
-public class PaymentQueryController {
+public class PaymentController {
     private final PaymentQueryService paymentQueryService;
 
     @GetMapping
@@ -33,6 +35,15 @@ public class PaymentQueryController {
     ) {
         GetPaymentsResponse response = paymentQueryService.getPayments(
                 userId, page, size, status, startDate, endDate);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/{paymentId}")
+    public ResponseEntity<ApiResponse<GetPaymentDetailResponse>> getPaymentDetail(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable String paymentId
+    ) {
+        GetPaymentDetailResponse response = paymentQueryService.getPaymentDetail(userId, paymentId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

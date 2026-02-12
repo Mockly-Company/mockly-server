@@ -9,9 +9,20 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
+
+    @Query("""
+            SELECT p FROM Payment p
+                JOIN FETCH p.invoice i
+                JOIN FETCH i.subscription s
+                JOIN FETCH s.subscriptionPlan sp
+                JOIN FETCH sp.product
+            WHERE p.id = :paymentId AND s.userId = :userId
+            """)
+    Optional<Payment> findByIdAndUserId(@Param("paymentId") String paymentId, @Param("userId") UUID userId);
 
     @Query("""
             SELECT p FROM Payment p
