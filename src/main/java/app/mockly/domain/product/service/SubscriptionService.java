@@ -201,12 +201,10 @@ public class SubscriptionService {
     public void processScheduleCreation(Long subscriptionId) {
         OutboxEvent event = outboxEventRepository.findByAggregateIdAndEventTypeAndStatus(subscriptionId, "SCHEDULE_CREATE", OutboxEventStatus.PENDING)
                 .orElse(null);
-
         if (event == null) return;
 
         Subscription subscription = subscriptionRepository.findById(subscriptionId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
-
         // 이미 스케줄이 생성되어 있는 경우, 중복 방지 (ex. 기본 결제 수단 변경)
         if (subscription.getCurrentPaymentScheduleId() != null) {
             event.markAsProcessed();
@@ -214,8 +212,17 @@ public class SubscriptionService {
         }
 
         String billingKey = event.extractBillingKey();
-        createFirstPaymentSchedule(subscription, billingKey);
-        event.markAsProcessed();
+
+        try {
+            createFirstPaymentSchedule(subscription, billingKey);
+            event.markAsProcessed();
+        } catch (BusinessException e) {
+            if (e.getStatusCode() == ApiStatusCode.DUPLICATE_RESOURCE) {
+                log.warn("PortOne에 스케줄 존재하나 DB에 scheduleId 없음 - subscriptionId: {}", subscriptionId);
+                event.markAsFailed("PAYMENT_SCHEDULE_ALREADY_EXISTS - 수동 확인 필요");
+            }
+            throw e;
+        }
     }
 
     @Transactional

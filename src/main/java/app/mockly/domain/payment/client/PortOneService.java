@@ -7,6 +7,7 @@ import io.portone.sdk.server.PortOneClient;
 import io.portone.sdk.server.common.BillingKeyPaymentInput;
 import io.portone.sdk.server.common.Currency;
 import io.portone.sdk.server.common.PaymentAmountInput;
+import io.portone.sdk.server.errors.PaymentScheduleAlreadyExistsException;
 import io.portone.sdk.server.payment.PayWithBillingKeyResponse;
 import io.portone.sdk.server.payment.billingkey.BillingKeyInfo;
 import io.portone.sdk.server.payment.paymentschedule.CreatePaymentScheduleResponse;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
@@ -96,12 +99,24 @@ public class PortOneService {
         try {
             CreatePaymentScheduleResponse response = portOneClient.getPayment().getPaymentSchedule()
                     .createPaymentSchedule(paymentId, billingKeyPaymentInput, timeToPay)
-                    .orTimeout(5, TimeUnit.SECONDS)
+                    .orTimeout(10, TimeUnit.SECONDS)
                     .join();
 
             String scheduleId = response.getSchedule().getId();
             log.info("결제 예약 생성 완료 - scheduleId: {}", scheduleId);
             return scheduleId;
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof PaymentScheduleAlreadyExistsException) {
+                log.warn("결제 예약이 이미 존재함 - paymentId: {}", paymentId);
+                throw new BusinessException(ApiStatusCode.DUPLICATE_RESOURCE, "결제 예약이 이미 존재합니다.");
+            }
+            if (cause instanceof TimeoutException) {
+                log.error("결제 예약 생성 타임아웃 - paymentId: {}", paymentId);
+                throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 생성 중 타임아웃이 발생했습니다.");
+            }
+            log.error("결제 예약 생성 실패 - paymentId: {}", paymentId, e);
+            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 생성 중 오류가 발생했습니다.");
         } catch (Exception e) {
             log.error("결제 예약 생성 실패 - paymentId: {}", paymentId, e);
             throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 생성 중 오류가 발생했습니다.");
