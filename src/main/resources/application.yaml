@@ -47,3 +47,10 @@ logging:
   level:
     org.springframework.security.web.FilterChainProxy: DEBUG
     org.springframework.security.web.util.matcher: DEBUG
+
+portone:
+  api-secret: ${PORTONE_API_SECRET}
+  api-base: https://api.portone.io
+  store-id: ${PORTONE_STORE_ID}
+  channel-key: ${PORTONE_CHANNEL_KEY} # 추후 채널들 추가
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}

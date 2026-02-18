@@ -12,15 +12,7 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(
-        name = "subscription",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_user_plan",
-                        columnNames = {"user_id", "plan_id"}
-                )
-        }
-)
+@Table(name = "subscription")
 public class Subscription extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,6 +40,10 @@ public class Subscription extends BaseEntity {
 
     @Column(name = "cancelled_at")
     private LocalDateTime canceledAt;
+
+    @Setter
+    @Column(name = "current_payment_schedule_id")
+    private String currentPaymentScheduleId;
 
     public static Subscription create(UUID userId, SubscriptionPlan subscriptionPlan) {
         return Subscription.builder()
@@ -78,11 +74,29 @@ public class Subscription extends BaseEntity {
         this.canceledAt = LocalDateTime.now();
     }
 
+    public void markAsPastDue() {
+        this.status = SubscriptionStatus.PAST_DUE;
+    }
+
     public boolean isActive() {
         return status == SubscriptionStatus.ACTIVE;
     }
 
-    public boolean isCancelled() {
+    public boolean isCanceled() {
         return status == SubscriptionStatus.CANCELED;
+    }
+
+    public boolean isPastDue() {
+        return status == SubscriptionStatus.PAST_DUE;
+    }
+
+    public void expire() {
+        this.status = SubscriptionStatus.EXPIRED;
+    }
+
+    public void extendPeriod() {
+        LocalDateTime now = LocalDateTime.now();
+        this.currentPeriodStart = now;
+        this.currentPeriodEnd = calculatePeriodEnd(now);
     }
 }

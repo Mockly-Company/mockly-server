@@ -14,4 +14,11 @@ public enum Currency {
         this.displayName = displayName;
         this.symbol = symbol;
     }
+
+    public io.portone.sdk.server.common.Currency toPortOneCurrency() {
+        return switch (this) {
+            case KRW -> io.portone.sdk.server.common.Currency.Krw.INSTANCE;
+            case USD -> io.portone.sdk.server.common.Currency.Usd.INSTANCE;
+        };
+    }
 }
