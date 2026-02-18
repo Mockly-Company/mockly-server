@@ -93,7 +93,7 @@ public class SubscriptionService {
         LocalDateTime periodEnd = subscriptionPlan.getBillingCycle().equals(BillingCycle.MONTHLY)
                 ? now.plusMonths(1)
                 : now.plusYears(1);
-        Invoice invoice = Invoice.create(subscription, subscriptionPlan.getPrice(), Currency.KRW, now, periodEnd);
+        Invoice invoice = Invoice.create(subscription, subscriptionPlan.getPrice(), subscriptionPlan.getCurrency(), now, periodEnd);
         invoiceRepository.save(invoice);
 
         Payment payment = Payment.create(invoice, subscriptionPlan.getPrice(), subscriptionPlan.getCurrency());

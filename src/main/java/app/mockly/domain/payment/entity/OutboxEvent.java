@@ -46,15 +46,23 @@ public class OutboxEvent extends BaseEntity {
     private String failReason;
 
     public static OutboxEvent scheduleCreate(Long subscriptionId, String billingKey) {
-        String payload = String.format("{\"subscriptionId\":%d,\"billingKey\":\"%s\"}", subscriptionId, billingKey);
-        OutboxEvent event = new OutboxEvent();
-        event.aggregateType = "SUBSCRIPTION";
-        event.aggregateId = subscriptionId;
-        event.eventType = "SCHEDULE_CREATE";
-        event.payload = payload;
-        event.status = OutboxEventStatus.PENDING;
-        event.retryCount = 0;
-        return event;
+        try {
+            var payloadMap = java.util.Map.of(
+                    "subscriptionId", subscriptionId,
+                    "billingKey", billingKey
+            );
+            String payload = objectMapper.writeValueAsString(payloadMap);
+            OutboxEvent event = new OutboxEvent();
+            event.aggregateType = "SUBSCRIPTION";
+            event.aggregateId = subscriptionId;
+            event.eventType = "SCHEDULE_CREATE";
+            event.payload = payload;
+            event.status = OutboxEventStatus.PENDING;
+            event.retryCount = 0;
+            return event;
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("OutboxEvent payload 직렬화 실패", e);
+        }
     }
 
     public String extractBillingKey() {
