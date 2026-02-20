@@ -48,6 +48,22 @@ logging:
     org.springframework.security.web.FilterChainProxy: DEBUG
     org.springframework.security.web.util.matcher: DEBUG
 
+# OpenAI 설정
+spring.ai:
+  openai:
+    api-key: ${OPENAI_API_KEY}
+    chat:
+      options:
+        model: gpt-4o
+        temperature: 0.7
+
+# 면접 쿼터 설정
+interview:
+  quota:
+    free: 1
+    basic: 5
+    pro: 10
+
 portone:
   api-secret: ${PORTONE_API_SECRET}
   api-base: https://api.portone.io
