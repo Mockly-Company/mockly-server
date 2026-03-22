@@ -103,6 +103,7 @@ class SubscriptionControllerTest {
         SubscriptionProduct freeProduct = SubscriptionProduct.builder()
                 .name("Free")
                 .description("무료 플랜")
+                .planTier(PlanTier.FREE)
                 .isActive(true)
                 .build();
         freeProduct = subscriptionProductRepository.save(freeProduct);
@@ -118,6 +119,7 @@ class SubscriptionControllerTest {
         basicProduct = SubscriptionProduct.builder()
                 .name("Basic")
                 .description("베이직 플랜")
+                .planTier(PlanTier.BASIC)
                 .isActive(true)
                 .build();
         basicProduct = subscriptionProductRepository.save(basicProduct);

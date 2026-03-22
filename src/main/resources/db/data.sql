@@ -79,33 +79,36 @@ WHERE name = 'Pro';
 -- ============================================
 
 -- Free 플랜 상품
-INSERT INTO subscription_product (name, description, features, is_active, created_at, updated_at)
+INSERT INTO subscription_product (name, description, features, plan_tier, is_active, created_at, updated_at)
 VALUES (
     'Free',
     'AI 면접 연습을 가볍게 체험해보세요',
     '["AI 면접 연습 일 1회", "AI 기본 피드백 제공", "면접 결과 요약 제공", "면접 기록 7일 보관"]'::jsonb,
+    'FREE',
     true,
     NOW(),
     NOW()
 );
 
 -- Basic 플랜 상품
-INSERT INTO subscription_product (name, description, features, is_active, created_at, updated_at)
+INSERT INTO subscription_product (name, description, features, plan_tier, is_active, created_at, updated_at)
 VALUES (
     'Basic',
     'AI와 함께 면접을 준비하는 가장 기본적인 플랜',
     '["AI 면접 연습 일 5회", "AI 상세 피드백 제공", "면접 결과 비교 및 히스토리 관리", "면접 기록 무제한 보관", "음성 기반 AI 인터뷰 지원"]'::jsonb,
+    'BASIC',
     true,
     NOW(),
     NOW()
 );
 
 -- Pro 플랜 상품
-INSERT INTO subscription_product (name, description, features, is_active, created_at, updated_at)
+INSERT INTO subscription_product (name, description, features, plan_tier, is_active, created_at, updated_at)
 VALUES (
     'Pro',
     'AI 분석을 통해 면접 실력을 체계적으로 개선하세요',
-    '["AI 면접 연습 일 10회", "AI 심층 분석 리포트 제공", "개인 맞춤형 AI 피드백", "면접 결과 추이 분석", "음성 기반 AI 인터뷰 지원"]'::jsonb,
+    '["AI 면접 연접 일 10회", "AI 심층 분석 리포트 제공", "개인 맞춤형 AI 피드백", "면접 결과 추이 분석", "음성 기반 AI 인터뷰 지원"]'::jsonb,
+    'PRO',
     true,
     NOW(),
     NOW()
@@ -116,21 +119,28 @@ VALUES (
 -- ============================================
 
 -- Free 플랜 - 평생 무료
-INSERT INTO subscription_plan (product_id, amount, currency, billing_cycle)
-VALUES (1, 0, 'KRW', 'LIFETIME');
+INSERT INTO subscription_plan (product_id, price, currency, billing_cycle)
+SELECT id, 0, 'KRW', 'LIFETIME' FROM subscription_product WHERE name = 'Free';
 
 -- Basic 플랜 - 월간
-INSERT INTO subscription_plan (product_id, amount, currency, billing_cycle)
-VALUES (2, 9900, 'KRW', 'MONTHLY');
+INSERT INTO subscription_plan (product_id, price, currency, billing_cycle)
+SELECT id, 9900, 'KRW', 'MONTHLY' FROM subscription_product WHERE name = 'Basic';
 
 -- Basic 플랜 - 연간 (선택사항)
--- INSERT INTO subscription_plan (product_id, amount, currency, billing_cycle)
--- VALUES (2, 99000, 'KRW', 'YEARLY');
+-- INSERT INTO subscription_plan (product_id, price, currency, billing_cycle)
+-- SELECT id, 99000, 'KRW', 'YEARLY' FROM subscription_product WHERE name = 'Basic';
 
 -- Pro 플랜 - 월간
-INSERT INTO subscription_plan (product_id, amount, currency, billing_cycle)
-VALUES (3, 14900, 'KRW', 'MONTHLY');
+INSERT INTO subscription_plan (product_id, price, currency, billing_cycle)
+SELECT id, 14900, 'KRW', 'MONTHLY' FROM subscription_product WHERE name = 'Pro';
 
 -- Pro 플랜 - 연간 (선택사항)
--- INSERT INTO subscription_plan (product_id, amount, currency, billing_cycle)
--- VALUES (3, 169000, 'KRW', 'YEARLY');
+-- INSERT INTO subscription_plan (product_id, price, currency, billing_cycle)
+-- SELECT id, 169000, 'KRW', 'YEARLY' FROM subscription_product WHERE name = 'Pro';
+
+-- ============================================
+-- InterviewQuota (플랜별 면접 한도)
+-- ============================================
+
+INSERT INTO interview_quota (plan_tier, daily_limit, max_questions_per_session)
+VALUES ('FREE', 1, 3), ('BASIC', 5, 5), ('PRO', 15, 10);
