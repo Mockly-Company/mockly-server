@@ -23,6 +23,9 @@ public class InterviewFeedback extends BaseEntity {
     @Column(nullable = false)
     private int overallScore;
 
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private String categoryScores;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String strengths;
 
@@ -33,10 +36,12 @@ public class InterviewFeedback extends BaseEntity {
     private String detailedAnalysis;
 
     public static InterviewFeedback create(InterviewSession session, int overallScore,
-                                           String strengths, String improvements, String detailedAnalysis) {
+                                           String categoryScores, String strengths,
+                                           String improvements, String detailedAnalysis) {
         return InterviewFeedback.builder()
                 .session(session)
                 .overallScore(overallScore)
+                .categoryScores(categoryScores)
                 .strengths(strengths)
                 .improvements(improvements)
                 .detailedAnalysis(detailedAnalysis)
