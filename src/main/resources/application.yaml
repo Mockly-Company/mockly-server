@@ -57,13 +57,6 @@ spring.ai:
         model: gpt-4o
         temperature: 0.7
 
-# 면접 쿼터 설정
-interview:
-  quota:
-    free: 1
-    basic: 5
-    pro: 10
-
 portone:
   api-secret: ${PORTONE_API_SECRET}
   api-base: https://api.portone.io
