@@ -2,6 +2,8 @@ package app.mockly.domain.interview.entity;
 
 import app.mockly.global.common.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 @Entity
@@ -23,8 +25,9 @@ public class InterviewFeedback extends BaseEntity {
     @Column(nullable = false)
     private int overallScore;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
-    private String categoryScores;
+    private String expertFeedbacks;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String strengths;
@@ -32,16 +35,16 @@ public class InterviewFeedback extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String improvements;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT")
     private String detailedAnalysis;
 
     public static InterviewFeedback create(InterviewSession session, int overallScore,
-                                           String categoryScores, String strengths,
+                                           String expertFeedbacks, String strengths,
                                            String improvements, String detailedAnalysis) {
         return InterviewFeedback.builder()
                 .session(session)
                 .overallScore(overallScore)
-                .categoryScores(categoryScores)
+                .expertFeedbacks(expertFeedbacks)
                 .strengths(strengths)
                 .improvements(improvements)
                 .detailedAnalysis(detailedAnalysis)
