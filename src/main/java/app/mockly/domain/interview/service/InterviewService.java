@@ -2,11 +2,16 @@ package app.mockly.domain.interview.service;
 
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
+import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
+import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
+import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
+import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
@@ -15,6 +20,7 @@ import app.mockly.domain.product.entity.SubscriptionStatus;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +29,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,10 +40,12 @@ public class InterviewService {
 
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
+    private final InterviewFeedbackRepository interviewFeedbackRepository;
     private final UserRepository userRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final InterviewAiService interviewAiService;
     private final InterviewQuotaRepository interviewQuotaRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
@@ -56,9 +65,59 @@ public class InterviewService {
 
         session.incrementQuestionNumber();
         interviewMessageRepository.save(
-                InterviewMessage.interviewerMessage(session, firstQuestion, session.getCurrentQuestionNumber()));
+                InterviewMessage.createInterviewerMessage(session, firstQuestion, session.getCurrentQuestionNumber()));
 
         return CreateInterviewResponse.from(session, firstQuestion);
+    }
+
+    @Transactional
+    public SubmitAnswerResponse submitAnswer(UUID userId, UUID sessionId, SubmitAnswerRequest request) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+
+        if (!session.isInProgress()) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "이미 종료된 면접 세션입니다.");
+        }
+
+        interviewMessageRepository.save(
+                InterviewMessage.createUserMessage(session, request.content(), session.getCurrentQuestionNumber()));
+
+        if (session.isAllQuestionsAnswered()) {
+            PlanTier plan = getUserPlan(userId);
+            List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
+            InterviewFeedbackResult feedbackResult = interviewAiService.generateFeedback(
+                    history, session.getInterviewType(), plan);
+
+            session.complete();
+            interviewFeedbackRepository.save(InterviewFeedback.create(
+                    session,
+                    feedbackResult.overallScore(),
+                    serializeExpertFeedbacks(feedbackResult),
+                    feedbackResult.strengths(),
+                    feedbackResult.improvements(),
+                    feedbackResult.detailedAnalysis()
+            ));
+
+            return SubmitAnswerResponse.completed(session, feedbackResult);
+        }
+
+        session.incrementQuestionNumber();
+        List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
+        String nextQuestion = interviewAiService.generateNextQuestion(
+                history, session.getInterviewType(),
+                session.getPosition(), session.getExperienceLevel());
+        interviewMessageRepository.save(
+                InterviewMessage.createInterviewerMessage(session, nextQuestion, session.getCurrentQuestionNumber()));
+
+        return SubmitAnswerResponse.withNextQuestion(session, nextQuestion);
+    }
+
+    private String serializeExpertFeedbacks(InterviewFeedbackResult result) {
+        try {
+            return objectMapper.writeValueAsString(result.expertFeedbacks());
+        } catch (Exception e) {
+            return "[]";
+        }
     }
 
     // active subscription이 있으면 PlanTier 반환, 없으면 FREE

@@ -29,7 +29,7 @@ public class InterviewMessage extends BaseEntity {
 
     private Integer questionNumber;
 
-    public static InterviewMessage interviewerMessage(InterviewSession session, String content, int questionNumber) {
+    public static InterviewMessage createInterviewerMessage(InterviewSession session, String content, int questionNumber) {
         return InterviewMessage.builder()
                 .session(session)
                 .role(InterviewMessageRole.INTERVIEWER)
@@ -38,11 +38,12 @@ public class InterviewMessage extends BaseEntity {
                 .build();
     }
 
-    public static InterviewMessage userMessage(InterviewSession session, String content) {
+    public static InterviewMessage createUserMessage(InterviewSession session, String content, int questionNumber) {
         return InterviewMessage.builder()
                 .session(session)
                 .role(InterviewMessageRole.USER)
                 .content(content)
+                .questionNumber(questionNumber)
                 .build();
     }
 }
