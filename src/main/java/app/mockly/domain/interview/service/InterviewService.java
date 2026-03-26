@@ -6,11 +6,13 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
+import app.mockly.domain.interview.dto.response.SessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
 import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
+import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
@@ -22,8 +24,13 @@ import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -110,6 +117,15 @@ public class InterviewService {
                 InterviewMessage.createInterviewerMessage(session, nextQuestion, session.getCurrentQuestionNumber()));
 
         return SubmitAnswerResponse.withNextQuestion(session, nextQuestion);
+    }
+
+    @Transactional(readOnly = true)
+    public SessionListResponse getSessions(UUID userId, int page, int size, InterviewSessionStatus status) {
+        Pageable pageable = PageRequest.of(page - 1, size, Sort.by("createdAt").descending());
+        Page<InterviewSession> result = status != null
+                ? interviewSessionRepository.findByUserIdAndStatus(userId, status, pageable)
+                : interviewSessionRepository.findByUserId(userId, pageable);
+        return SessionListResponse.from(result);
     }
 
     private String serializeExpertFeedbacks(InterviewFeedbackResult result) {

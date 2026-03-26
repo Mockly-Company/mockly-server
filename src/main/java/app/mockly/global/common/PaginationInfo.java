@@ -1,4 +1,4 @@
-package app.mockly.domain.payment.dto.response;
+package app.mockly.global.common;
 
 import org.springframework.data.domain.Page;
 

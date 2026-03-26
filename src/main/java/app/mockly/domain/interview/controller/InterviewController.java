@@ -3,7 +3,9 @@ package app.mockly.domain.interview.controller;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
+import app.mockly.domain.interview.dto.response.SessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.service.InterviewService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -29,6 +31,17 @@ public class InterviewController {
     ) {
         CreateInterviewResponse response = interviewService.createSession(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<SessionListResponse>> getSessions(
+            @AuthenticationPrincipal UUID userId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) InterviewSessionStatus status
+    ) {
+        SessionListResponse response = interviewService.getSessions(userId, page, size, status);
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping("/{sessionId}/answer")
