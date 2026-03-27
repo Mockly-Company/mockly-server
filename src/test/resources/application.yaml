@@ -19,6 +19,11 @@ jwt:
   access-token-expiration: 900000 # 15분
   refresh-token-expiration: 604800000 # 7일
 
+# OpenAI 테스트 설정 (InterviewAiService @MockitoBean으로 대체)
+spring.ai:
+  openai:
+    api-key: dummy-key-for-testing
+
 # PortOne 테스트 설정 (Mock으로 대체)
 portone:
   api-secret: test-api-secret

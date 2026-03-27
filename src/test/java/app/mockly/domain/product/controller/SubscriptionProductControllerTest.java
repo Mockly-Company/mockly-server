@@ -89,6 +89,7 @@ class SubscriptionProductControllerTest {
         SubscriptionProduct freeProduct = SubscriptionProduct.builder()
                 .name("Free")
                 .description("무료 플랜")
+                .planTier(PlanTier.FREE)
                 .features(List.of("기본 기능"))
                 .isActive(true)
                 .build();
@@ -106,6 +107,7 @@ class SubscriptionProductControllerTest {
         SubscriptionProduct basicProduct = SubscriptionProduct.builder()
                 .name("Basic")
                 .description("베이직 플랜")
+                .planTier(PlanTier.BASIC)
                 .features(List.of("기본 기능", "추가 기능"))
                 .isActive(true)
                 .build();

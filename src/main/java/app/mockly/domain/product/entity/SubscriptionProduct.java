@@ -24,6 +24,10 @@ public class SubscriptionProduct extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String name;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private PlanTier planTier;
+
     @Column(length = 500)
     private String description;
 

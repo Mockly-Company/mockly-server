@@ -29,9 +29,15 @@ public enum ApiStatusCode {
     USER_NOT_FOUND(404, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다"),
     RESOURCE_NOT_FOUND(404, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다"),
 
+    // 429: 요청 제한
+    QUOTA_EXCEEDED(429, "QUOTA_EXCEEDED", "일일 사용 한도를 초과했습니다"),
+
     // 500: 서버 오류
     INTERNAL_SERVER_ERROR(500, "INTERNAL_SERVER_ERROR", "서버 내부 오류가 발생했습니다"),
-    FILE_UPLOAD_ERROR(500, "FILE_UPLOAD_ERROR", "파일 업로드에 실패했습니다");
+    FILE_UPLOAD_ERROR(500, "FILE_UPLOAD_ERROR", "파일 업로드에 실패했습니다"),
+
+    // 503: 외부 서비스 오류
+    AI_SERVICE_ERROR(503, "AI_SERVICE_ERROR", "AI 서비스 오류가 발생했습니다");
 
     private final int status;
     private final String code;

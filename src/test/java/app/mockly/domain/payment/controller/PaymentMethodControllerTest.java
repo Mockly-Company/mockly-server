@@ -108,6 +108,7 @@ class PaymentMethodControllerTest {
         SubscriptionProduct product = SubscriptionProduct.builder()
                 .name("테스트 상품")
                 .description("테스트용 구독 상품")
+                .planTier(PlanTier.BASIC)
                 .build();
         subscriptionProductRepository.save(product);
 

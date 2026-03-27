@@ -2,6 +2,7 @@ package app.mockly.domain.payment.dto.response;
 
 import app.mockly.domain.payment.entity.Payment;
 import app.mockly.domain.payment.entity.PaymentStatus;
+import app.mockly.global.common.PaginationInfo;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
