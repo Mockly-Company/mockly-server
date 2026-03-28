@@ -8,6 +8,7 @@ import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
@@ -20,9 +21,11 @@ import java.util.stream.Collectors;
 public class InterviewAiService {
 
     private final ChatClient chatClient;
+    private final ObjectMapper objectMapper;
 
-    public InterviewAiService(ChatClient.Builder chatClientBuilder) {
+    public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper) {
         this.chatClient = chatClientBuilder.build();
+        this.objectMapper = objectMapper;
     }
 
     public String generateFirstQuestion(String position, ExperienceLevel experienceLevel, InterviewType interviewType) {
@@ -43,6 +46,16 @@ public class InterviewAiService {
                 면접 시작 시 짧게 인사하고 첫 질문을 자연스럽게 이어가세요.
                 인사와 질문을 합쳐 세 문장을 넘지 마세요.
                 "~도 말씀해주세요", "~이고 ~도"처럼 여러 질문을 한 번에 묻지 마세요.
+                "면접관:" 같은 역할 접두사를 절대 포함하지 마세요. 질문 내용만 출력하세요.
+
+                [질문 스타일]
+                추상적인 개념 질문 대신, 구체적인 시나리오나 상황을 설정하여 질문하세요.
+                - 나쁜 예: "대규모 시스템 설계 시 고려해야 할 주요 요소는 무엇이라고 생각하시나요?"
+                - 좋은 예: "하루 1억 건의 주문을 처리하는 이커머스 시스템에서 주문 API 응답시간이 급격히 느려졌습니다. 어떤 순서로 원인을 파악하시겠어요?"
+                - 좋은 예: "팀에서 운영 중인 서비스의 DB 쿼리 응답이 갑자기 3배 느려졌다는 알림을 받았습니다. 어떻게 대응하시겠어요?"
+
+                [출력 형식 예시]
+                안녕하세요, 면접 시작하겠습니다. 최근 프로젝트에서 트래픽이 급증해 장애가 발생한 경험이 있으시다면, 그때 어떻게 대응하셨는지 말씀해주시겠어요?
                 """;
 
         String userPrompt = """
@@ -79,11 +92,25 @@ public class InterviewAiService {
                 이전 답변에 한 문장으로 짧고 중립적으로 반응한 뒤 다음 질문으로 이어가세요.
                 반응은 매번 다른 표현을 사용하고, 칭찬("잘 하셨습니다", "좋습니다" 등)은 하지 마세요.
                 질문 하나만 하세요. "~도 말씀해주세요"처럼 여러 질문을 한 번에 묻지 마세요.
+                "면접관:" 같은 역할 접두사를 절대 포함하지 마세요. 질문 내용만 출력하세요.
 
-                [답변 평가 기준]
-                - 개념만 짧게 언급했다면: 경험이나 구체적인 예시를 꼬리질문으로 파고드세요.
-                - 구체적인 경험/예시까지 설명했다면: 자연스럽게 다음 주제로 넘어가세요.
-                - 모르겠다거나 답변이 매우 짧고 불확실하다면: 강요하지 말고 다음 주제로 넘어가세요.
+                [질문 스타일]
+                추상적인 개념 질문 대신, 구체적인 시나리오나 상황을 설정하여 질문하세요.
+                새 주제로 전환할 때는 이전에 다룬 주제와 겹치지 않는 영역을 선택하세요.
+
+                [답변 분석 후 행동]
+                - 개념만 짧게 언급했다면 → 구체적 상황을 설정해서 파고드세요.
+                  예: "그 개념을 적용해야 했던 상황을 하나 떠올려보시면, 어떤 제약조건이 있었나요?"
+                - 구체적인 경험까지 설명했다면 → 자연스럽게 다른 주제로 넘어가세요.
+                - 모르겠다거나 불확실하다면 → 강요하지 말고 다른 주제로 넘어가세요.
+
+                [꼬리질문 규칙]
+                - 지원자가 사용한 표현을 그대로 반복하지 마세요.
+                - "~경험을 공유해주시겠어요?"를 반복하지 마세요. 다양한 방식으로 질문하세요:
+                  · 가정 변경: "만약 그 상황에서 시간이 절반밖에 없었다면?"
+                  · 구체화 요청: "그때 가장 먼저 확인한 지표가 뭐였나요?"
+                  · 반론 제시: "다른 접근법도 있었을 텐데, 왜 그 방법을 선택하셨어요?"
+                  · 결과 확인: "결과적으로 어떤 수치 변화가 있었나요?"
 
                 꼬리질문을 우선하고, 새 주제는 현재 주제가 충분히 탐색됐을 때만 전환하세요.
                 """;
@@ -199,11 +226,18 @@ public class InterviewAiService {
     }
 
     private String formatHistory(List<InterviewMessage> history) {
-        return history.stream()
-                .map(m -> {
-                    String role = m.getRole() == InterviewMessageRole.INTERVIEWER ? "면접관" : "지원자";
-                    return role + ": " + m.getContent();
-                })
-                .collect(Collectors.joining("\n"));
+        List<HistoryEntry> entries = history.stream()
+                .map(m -> new HistoryEntry(
+                        m.getRole() == InterviewMessageRole.INTERVIEWER ? "interviewer" : "candidate",
+                        m.getContent()))
+                .toList();
+        try {
+            return objectMapper.writeValueAsString(entries);
+        } catch (Exception e) {
+            log.error("대화 기록 직렬화 실패", e);
+            return "[]";
+        }
     }
+
+    private record HistoryEntry(String role, String content) {}
 }
