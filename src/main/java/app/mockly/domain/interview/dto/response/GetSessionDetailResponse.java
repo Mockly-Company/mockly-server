@@ -20,9 +20,10 @@ public record GetSessionDetailResponse(
         InterviewSessionStatus status,
         Instant createdAt,
         Instant completedAt,
-        List<MessageDto> messages
+        List<MessageDto> messages,
+        FeedbackDto feedback
 ) {
-    public static GetSessionDetailResponse from(InterviewSession session, List<InterviewMessage> messages) {
+    public static GetSessionDetailResponse from(InterviewSession session, List<InterviewMessage> messages, FeedbackDto feedback) {
         return new GetSessionDetailResponse(
                 session.getId(),
                 session.getPosition(),
@@ -33,7 +34,8 @@ public record GetSessionDetailResponse(
                 session.getStatus(),
                 session.getCreatedAt(),
                 session.getCompletedAt(),
-                messages.stream().map(MessageDto::from).toList()
+                messages.stream().map(MessageDto::from).toList(),
+                feedback
         );
     }
 }

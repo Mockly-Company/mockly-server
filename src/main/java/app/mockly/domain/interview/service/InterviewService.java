@@ -6,6 +6,7 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
+import app.mockly.domain.interview.dto.response.FeedbackDto;
 import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
 import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
@@ -125,7 +126,10 @@ public class InterviewService {
         InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
         List<InterviewMessage> messages = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-        return GetSessionDetailResponse.from(session, messages);
+        FeedbackDto feedback = interviewFeedbackRepository.findBySessionId(sessionId)
+                .map(f -> FeedbackDto.from(f, objectMapper))
+                .orElse(null);
+        return GetSessionDetailResponse.from(session, messages, feedback);
     }
 
     @Transactional(readOnly = true)
