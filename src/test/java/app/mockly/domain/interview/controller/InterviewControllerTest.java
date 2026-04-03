@@ -6,16 +6,19 @@ import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
+import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
 import app.mockly.domain.interview.controller.docs.SessionListDocs;
 import app.mockly.domain.interview.controller.docs.SubmitAnswerDocs;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.entity.ExperienceLevel;
+import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.entity.InterviewType;
+import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
 import app.mockly.domain.interview.service.InterviewAiService;
@@ -75,6 +78,9 @@ class InterviewControllerTest {
 
     @Autowired
     private InterviewSessionRepository interviewSessionRepository;
+
+    @Autowired
+    private InterviewMessageRepository interviewMessageRepository;
 
     private User testUser;
     private String validAccessToken;
@@ -322,6 +328,42 @@ class InterviewControllerTest {
                         .status(status)
                         .build()
         );
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId - 성공: 세션 상세 조회")
+    void getSessionDetail_success() throws Exception {
+        InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
+        interviewMessageRepository.save(InterviewMessage.createInterviewerMessage(session, "자기소개를 해주세요.", 1));
+        interviewMessageRepository.save(InterviewMessage.createUserMessage(session, "안녕하세요, 저는 백엔드 개발자입니다.", 1));
+
+        mockMvc.perform(get("/api/interviews/{sessionId}", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.sessionId").value(session.getId().toString()))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.messages.length()").value(2))
+                .andExpect(jsonPath("$.data.messages[0].role").value("INTERVIEWER"))
+                .andExpect(jsonPath("$.data.messages[1].role").value("USER"))
+                .andDo(document("interview-get-session-detail",
+                        resource(SessionDetailDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId - 실패: 세션 없음 (404)")
+    void getSessionDetail_notFound() throws Exception {
+        mockMvc.perform(get("/api/interviews/{sessionId}", java.util.UUID.randomUUID())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andDo(document("interview-get-session-detail-not-found",
+                        resource(SessionDetailDocs.notFound())
+                ));
     }
 
     @Test

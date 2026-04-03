@@ -6,7 +6,8 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.SessionListResponse;
+import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
+import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
 import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
@@ -120,12 +121,20 @@ public class InterviewService {
     }
 
     @Transactional(readOnly = true)
-    public SessionListResponse getSessions(UUID userId, int page, int size, InterviewSessionStatus status) {
+    public GetSessionDetailResponse getSessionDetail(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        List<InterviewMessage> messages = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
+        return GetSessionDetailResponse.from(session, messages);
+    }
+
+    @Transactional(readOnly = true)
+    public GetSessionListResponse getSessions(UUID userId, int page, int size, InterviewSessionStatus status) {
         Pageable pageable = PageRequest.of(page - 1, size, Sort.by("createdAt").descending());
         Page<InterviewSession> result = status != null
                 ? interviewSessionRepository.findByUserIdAndStatus(userId, status, pageable)
                 : interviewSessionRepository.findByUserId(userId, pageable);
-        return SessionListResponse.from(result);
+        return GetSessionListResponse.from(result);
     }
 
     private String serializeExpertFeedbacks(InterviewFeedbackResult result) {

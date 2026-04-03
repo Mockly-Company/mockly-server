@@ -3,7 +3,8 @@ package app.mockly.domain.interview.controller;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.SessionListResponse;
+import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
+import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.service.InterviewService;
@@ -34,13 +35,22 @@ public class InterviewController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<SessionListResponse>> getSessions(
+    public ResponseEntity<ApiResponse<GetSessionListResponse>> getSessions(
             @AuthenticationPrincipal UUID userId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) InterviewSessionStatus status
     ) {
-        SessionListResponse response = interviewService.getSessions(userId, page, size, status);
+        GetSessionListResponse response = interviewService.getSessions(userId, page, size, status);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/{sessionId}")
+    public ResponseEntity<ApiResponse<GetSessionDetailResponse>> getSessionDetail(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        GetSessionDetailResponse response = interviewService.getSessionDetail(userId, sessionId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
