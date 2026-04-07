@@ -66,11 +66,12 @@ public class InterviewService {
         validateQuestionCount(request.totalQuestions(), plan);
 
         InterviewSession session = InterviewSession.create(
-                user, request.position(), request.experienceLevel(), request.interviewType(), request.totalQuestions());
+                user, request.position(), request.experienceLevel(), request.interviewType(),
+                request.totalQuestions(), request.selfIntroduction());
         interviewSessionRepository.save(session);
 
         String firstQuestion = interviewAiService.generateFirstQuestion(
-                request.position(), request.experienceLevel(), request.interviewType());
+                request.position(), request.experienceLevel(), request.interviewType(), request.selfIntroduction());
 
         session.incrementQuestionNumber();
         interviewMessageRepository.save(
@@ -114,7 +115,7 @@ public class InterviewService {
         List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
         String nextQuestion = interviewAiService.generateNextQuestion(
                 history, session.getInterviewType(),
-                session.getPosition(), session.getExperienceLevel());
+                session.getPosition(), session.getExperienceLevel(), session.getSelfIntroduction());
         interviewMessageRepository.save(
                 InterviewMessage.createInterviewerMessage(session, nextQuestion, session.getCurrentQuestionNumber()));
 

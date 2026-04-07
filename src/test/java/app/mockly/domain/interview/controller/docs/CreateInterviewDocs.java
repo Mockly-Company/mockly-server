@@ -22,7 +22,8 @@ public class CreateInterviewDocs {
             fieldWithPath("position").description("지원 포지션 (예: 백엔드 개발자)").type(SimpleType.STRING),
             fieldWithPath("experienceLevel").description("경력 수준 (JUNIOR, SENIOR 등)").type(SimpleType.STRING),
             fieldWithPath("interviewType").description("면접 유형 (TECHNICAL, BEHAVIORAL 등)").type(SimpleType.STRING),
-            fieldWithPath("totalQuestions").description("총 질문 개수 (3, 5, 10 중 플랜별 허용 값)").type(SimpleType.NUMBER)
+            fieldWithPath("totalQuestions").description("총 질문 개수 (3, 5, 10 중 플랜별 허용 값)").type(SimpleType.NUMBER),
+            fieldWithPath("selfIntroduction").description("지원자 자기소개 (최대 500자, AI 첫 질문 개인화에 활용)").type(SimpleType.STRING)
     );
 
     private static final List<FieldDescriptor> RESPONSE_FIELDS = List.of(

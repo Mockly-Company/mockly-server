@@ -97,9 +97,9 @@ class InterviewControllerTest {
         validAccessToken = jwtService.generateAccessToken(testUser.getId());
 
         given(tokenBlacklistService.isBlacklisted(anyString())).willReturn(false);
-        given(interviewAiService.generateFirstQuestion(anyString(), any(ExperienceLevel.class), any(InterviewType.class)))
+        given(interviewAiService.generateFirstQuestion(anyString(), any(ExperienceLevel.class), any(InterviewType.class), anyString()))
                 .willReturn("자기소개를 해주세요.");
-        given(interviewAiService.generateNextQuestion(any(), any(InterviewType.class), anyString(), any(ExperienceLevel.class)))
+        given(interviewAiService.generateNextQuestion(any(), any(InterviewType.class), anyString(), any(ExperienceLevel.class), anyString()))
                 .willReturn("다음 면접 질문을 하겠습니다.");
         given(interviewAiService.generateFeedback(any(), any(InterviewType.class), any(PlanTier.class)))
                 .willReturn(new InterviewFeedbackResult(
@@ -125,7 +125,8 @@ class InterviewControllerTest {
                 "백엔드 개발자",
                 ExperienceLevel.JUNIOR,
                 InterviewType.TECHNICAL,
-                3
+                3,
+                "1년차 백엔드 개발자로 이커머스 서비스에서 가격 정책과 재고 도메인을 다뤘습니다. Spring Boot와 JPA를 사용해 API를 개발하였고, 데이터 일관성 문제에 관심을 가지고 있습니다."
         );
 
         mockMvc.perform(post("/api/interviews")
@@ -150,14 +151,16 @@ class InterviewControllerTest {
     void createSession_QuotaExceeded() throws Exception {
         // 오늘 세션 1개 미리 생성 (FREE 플랜 한도: 1회)
         interviewSessionRepository.save(InterviewSession.create(
-                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3
+                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3,
+                "1년차 백엔드 개발자입니다."
         ));
 
         CreateInterviewRequest request = new CreateInterviewRequest(
                 "프론트엔드 개발자",
                 ExperienceLevel.JUNIOR,
                 InterviewType.TECHNICAL,
-                3
+                3,
+                "1년차 프론트엔드 개발자입니다."
         );
 
         mockMvc.perform(post("/api/interviews")
@@ -181,7 +184,8 @@ class InterviewControllerTest {
                 "백엔드 개발자",
                 ExperienceLevel.JUNIOR,
                 InterviewType.TECHNICAL,
-                5
+                5,
+                "1년차 백엔드 개발자입니다."
         );
 
         mockMvc.perform(post("/api/interviews")
@@ -280,8 +284,8 @@ class InterviewControllerTest {
     @Test
     @DisplayName("GET /api/interviews - 성공: 세션 목록 조회")
     void getSessions_success() throws Exception {
-        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3));
-        interviewSessionRepository.save(InterviewSession.create(testUser, "프론트엔드 개발자", ExperienceLevel.MID, InterviewType.BEHAVIORAL, 3));
+        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
+        interviewSessionRepository.save(InterviewSession.create(testUser, "프론트엔드 개발자", ExperienceLevel.MID, InterviewType.BEHAVIORAL, 3, "3년차 프론트엔드 개발자입니다."));
 
         mockMvc.perform(get("/api/interviews")
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -300,7 +304,7 @@ class InterviewControllerTest {
     @Test
     @DisplayName("GET /api/interviews - 성공: status 필터 적용")
     void getSessions_withStatusFilter() throws Exception {
-        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3));
+        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
         saveSession(3, 3, InterviewSessionStatus.COMPLETED);
 
         mockMvc.perform(get("/api/interviews")
@@ -324,6 +328,7 @@ class InterviewControllerTest {
                         .experienceLevel(ExperienceLevel.JUNIOR)
                         .interviewType(InterviewType.TECHNICAL)
                         .totalQuestions(totalQuestions)
+                        .selfIntroduction("1년차 백엔드 개발자로 이커머스 서비스를 개발했습니다.")
                         .currentQuestionNumber(currentQuestionNumber)
                         .status(status)
                         .build()
@@ -373,7 +378,8 @@ class InterviewControllerTest {
                 "백엔드 개발자",
                 ExperienceLevel.JUNIOR,
                 InterviewType.TECHNICAL,
-                3
+                3,
+                "1년차 백엔드 개발자입니다."
         );
 
         mockMvc.perform(post("/api/interviews")
