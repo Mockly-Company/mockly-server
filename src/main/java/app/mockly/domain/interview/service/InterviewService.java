@@ -39,6 +39,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -46,6 +47,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class InterviewService {
+
+    private static final List<String> GREETINGS = List.of(
+            "안녕하세요, 만나서 반갑습니다.",
+            "안녕하세요, 오늘 면접에 참여해 주셔서 감사합니다."
+    );
+    private static final Random RANDOM = new Random();
 
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
@@ -72,12 +79,14 @@ public class InterviewService {
 
         String firstQuestion = interviewAiService.generateFirstQuestion(
                 request.position(), request.experienceLevel(), request.interviewType(), request.selfIntroduction());
+        String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
+        String firstQuestionWithGreeting = greeting + " " + firstQuestion;
 
         session.incrementQuestionNumber();
         interviewMessageRepository.save(
-                InterviewMessage.createInterviewerMessage(session, firstQuestion, session.getCurrentQuestionNumber()));
+                InterviewMessage.createInterviewerMessage(session, firstQuestionWithGreeting, session.getCurrentQuestionNumber()));
 
-        return CreateInterviewResponse.from(session, firstQuestion);
+        return CreateInterviewResponse.from(session, firstQuestionWithGreeting);
     }
 
     @Transactional
