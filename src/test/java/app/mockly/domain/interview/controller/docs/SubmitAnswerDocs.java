@@ -27,8 +27,6 @@ public class SubmitAnswerDocs {
             fieldWithPath("currentQuestionNumber").description("현재 질문 번호").type(SimpleType.NUMBER),
             fieldWithPath("totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
             fieldWithPath("isCompleted").description("면접 완료 여부").type(SimpleType.BOOLEAN),
-            fieldWithPath("nextQuestion").description("다음 질문 (완료 시 null)").type(SimpleType.STRING).optional(),
-            fieldWithPath("closingMessage").description("마무리 멘트 (완료 시)").type(SimpleType.STRING).optional(),
             fieldWithPath("feedback").description("피드백 (완료 시)").type(JsonFieldType.OBJECT).optional(),
             fieldWithPath("feedback.overallScore").description("면접 종합 점수 (1~100)").type(SimpleType.NUMBER).optional(),
             fieldWithPath("feedback.expertFeedbacks").description("전문가별 평가 목록").type(JsonFieldType.ARRAY).optional(),
@@ -44,7 +42,7 @@ public class SubmitAnswerDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Interview")
                 .summary("답변 제출")
-                .description("면접 질문에 대한 답변을 제출합니다. 마지막 답변이면 피드백을 반환하고, 아니면 다음 질문을 반환합니다.")
+                .description("면접 질문에 대한 답변을 제출합니다. 마지막 답변이면 피드백을 반환합니다. 다음 질문은 GET /{sessionId}/questions/stream SSE 엔드포인트로 수신합니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .requestFields(REQUEST_FIELDS)
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))

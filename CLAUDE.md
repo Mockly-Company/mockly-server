@@ -385,12 +385,17 @@ Place domain-specific exceptions in `global/exception/` and register in `GlobalE
 
 ## Commit Message Convention
 
+**커밋은 항상 사용자가 직접 한다. Claude는 커밋 메시지를 추천만 하고, 절대 직접 커밋하지 않는다.**
+
+커밋 메시지 추천 시 subject와 description을 함께 제안한다.
+
 This project uses Korean commit messages with the following format:
 
 ```
 [type] 간결한 커밋 메시지 (50자 이내)
 
-상세 설명 (선택 사항, 72자 기준으로 줄바꿈)
+- 변경 내용 설명 (선택 사항)
+- 설계 결정이나 이유가 있으면 포함
 ```
 
 ### Commit Types
@@ -409,11 +414,11 @@ This project uses Korean commit messages with the following format:
 ### Examples
 
 ```
-[feat] Google OAuth 2.1 소셜 로그인 구현
-[feat] PortOne 결제 연동 및 구독 생성 API 추가
-[fix] JWT 토큰 만료 시간 검증 오류 수정
-[refactor] 사용자 서비스 계층 구조 개선
-[test] OAuth PKCE 플로우 통합 테스트 추가
+[feat] 세션 상세 조회 API 구현
+
+- GET /api/interviews/:sessionId 엔드포인트 추가
+- 세션 메타정보 및 전체 대화 내역(messages) 반환
+- 컨트롤러 테스트 및 REST Docs 추가
 ```
 
 ## Code Review Standards
@@ -484,6 +489,7 @@ When reviewing backend code, focus on:
 - Document REST APIs with Spring REST Docs
 - Keep business logic in service layer, not controllers
 - Use DTOs for API requests/responses, not entities directly
+- Controller에서 직접 사용하는 request/response DTO는 HTTP 동사를 접두사로 사용: `GetXXXRequest`, `GetXXXResponse`, `CreateXXXRequest`, `CreateXXXResponse`, `DeleteXXXRequest` 등
 - Mock external API calls in tests
 - Never log sensitive information (billing keys, tokens, passwords)
 - Use JSON libraries (ObjectMapper) for JSON construction, never String.format

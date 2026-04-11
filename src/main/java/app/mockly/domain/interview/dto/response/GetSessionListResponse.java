@@ -7,14 +7,14 @@ import org.springframework.data.domain.Page;
 
 import java.util.List;
 
-public record SessionListResponse(
+public record GetSessionListResponse(
         List<SessionSummaryDto> sessions,
         PaginationInfo pagination
 ) {
-    public static SessionListResponse from(Page<InterviewSession> page) {
+    public static GetSessionListResponse from(Page<InterviewSession> page) {
         List<SessionSummaryDto> sessions = page.getContent().stream()
                 .map(SessionSummaryDto::from)
                 .toList();
-        return new SessionListResponse(sessions, PaginationInfo.from(page));
+        return new GetSessionListResponse(sessions, PaginationInfo.from(page));
     }
 }

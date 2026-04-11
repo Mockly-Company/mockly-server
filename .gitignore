@@ -39,3 +39,4 @@ out/
 .env
 application*.yaml
 *:Zone.Identifier
+.mcp.json

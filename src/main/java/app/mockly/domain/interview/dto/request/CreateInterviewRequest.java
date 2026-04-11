@@ -18,6 +18,10 @@ public record CreateInterviewRequest(
         InterviewType interviewType,
 
         @NotNull(message = "질문 개수는 필수입니다.")
-        Integer totalQuestions
+        Integer totalQuestions,
+
+        @NotBlank(message = "자기소개는 필수입니다.")
+        @Size(max = 500, message = "자기소개는 500자 이내로 입력해주세요.")
+        String selfIntroduction
 ) {
 }

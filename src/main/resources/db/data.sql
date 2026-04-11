@@ -107,7 +107,7 @@ INSERT INTO subscription_product (name, description, features, plan_tier, is_act
 VALUES (
     'Pro',
     'AI 분석을 통해 면접 실력을 체계적으로 개선하세요',
-    '["AI 면접 연접 일 10회", "AI 심층 분석 리포트 제공", "개인 맞춤형 AI 피드백", "면접 결과 추이 분석", "음성 기반 AI 인터뷰 지원"]'::jsonb,
+    '["AI 면접 연습 일 10회", "AI 심층 분석 리포트 제공", "개인 맞춤형 AI 피드백", "면접 결과 추이 분석", "음성 기반 AI 인터뷰 지원"]'::jsonb,
     'PRO',
     true,
     NOW(),

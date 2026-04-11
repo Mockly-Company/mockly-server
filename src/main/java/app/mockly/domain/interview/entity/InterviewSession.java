@@ -28,6 +28,9 @@ public class InterviewSession extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String position;
 
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String selfIntroduction;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ExperienceLevel experienceLevel;
@@ -49,13 +52,14 @@ public class InterviewSession extends BaseEntity {
     private Instant completedAt;
 
     public static InterviewSession create(User user, String position, ExperienceLevel experienceLevel,
-                                          InterviewType interviewType, int totalQuestions) {
+                                          InterviewType interviewType, int totalQuestions, String selfIntroduction) {
         return InterviewSession.builder()
                 .user(user)
                 .position(position)
                 .experienceLevel(experienceLevel)
                 .interviewType(interviewType)
                 .totalQuestions(totalQuestions)
+                .selfIntroduction(selfIntroduction)
                 .currentQuestionNumber(0)
                 .status(InterviewSessionStatus.IN_PROGRESS)
                 .build();

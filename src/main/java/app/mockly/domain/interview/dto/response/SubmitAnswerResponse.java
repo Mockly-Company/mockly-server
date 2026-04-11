@@ -10,18 +10,14 @@ public record SubmitAnswerResponse(
         int currentQuestionNumber,
         int totalQuestions,
         boolean isCompleted,
-        String nextQuestion,
-        String closingMessage,
         InterviewFeedbackResult feedback
 ) {
-    public static SubmitAnswerResponse withNextQuestion(InterviewSession session, String nextQuestion) {
+    public static SubmitAnswerResponse inProgress(InterviewSession session) {
         return new SubmitAnswerResponse(
                 session.getId(),
                 session.getCurrentQuestionNumber(),
                 session.getTotalQuestions(),
                 false,
-                nextQuestion,
-                null,
                 null
         );
     }
@@ -32,8 +28,6 @@ public record SubmitAnswerResponse(
                 session.getCurrentQuestionNumber(),
                 session.getTotalQuestions(),
                 true,
-                null,
-                "면접이 종료되었습니다. 오늘 면접에 응해주셔서 감사합니다. 수고하셨습니다.",
                 feedback
         );
     }
