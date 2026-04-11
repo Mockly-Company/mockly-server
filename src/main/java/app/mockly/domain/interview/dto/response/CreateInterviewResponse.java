@@ -12,20 +12,18 @@ public record CreateInterviewResponse(
         ExperienceLevel experienceLevel,
         InterviewType interviewType,
         int totalQuestions,
-        int currentQuestionNumber,
         String status,
-        String firstQuestion
+        String greeting
 ) {
-    public static CreateInterviewResponse from(InterviewSession session, String firstQuestion) {
+    public static CreateInterviewResponse from(InterviewSession session, String greeting) {
         return new CreateInterviewResponse(
                 session.getId(),
                 session.getPosition(),
                 session.getExperienceLevel(),
                 session.getInterviewType(),
                 session.getTotalQuestions(),
-                session.getCurrentQuestionNumber(),
                 session.getStatus().name(),
-                firstQuestion
+                greeting
         );
     }
 }

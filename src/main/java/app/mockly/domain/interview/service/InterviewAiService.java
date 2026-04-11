@@ -4,6 +4,7 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.entity.ExperienceLevel;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewMessageRole;
+import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.ApiStatusCode;
@@ -12,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -28,8 +30,11 @@ public class InterviewAiService {
         this.objectMapper = objectMapper;
     }
 
-    public String generateFirstQuestion(String position, ExperienceLevel experienceLevel, InterviewType interviewType,
-                                        String selfIntroduction) {
+    public Flux<String> generateFirstQuestion(InterviewSession session) {
+        String position = session.getPosition();
+        ExperienceLevel experienceLevel = session.getExperienceLevel();
+        InterviewType interviewType = session.getInterviewType();
+        String selfIntroduction = session.getSelfIntroduction();
         String systemPrompt = """
                 당신은 실제 기업에서 면접을 진행하는 숙련된 시니어 면접관입니다.
 
@@ -163,7 +168,7 @@ public class InterviewAiService {
             return chatClient.prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
-                    .call()
+                    .stream()
                     .content();
         } catch (Exception e) {
             log.error("AI 첫 질문 생성 실패", e);
@@ -171,8 +176,11 @@ public class InterviewAiService {
         }
     }
 
-    public String generateNextQuestion(List<InterviewMessage> history, InterviewType interviewType,
-                                        String position, ExperienceLevel experienceLevel, String selfIntroduction) {
+    public Flux<String> generateNextQuestion(InterviewSession session, List<InterviewMessage> history) {
+        String position = session.getPosition();
+        ExperienceLevel experienceLevel = session.getExperienceLevel();
+        InterviewType interviewType = session.getInterviewType();
+        String selfIntroduction = session.getSelfIntroduction();
         String levelContext = switch (experienceLevel) {
             case JUNIOR -> "깊이보다 사고 과정과 학습 의지를 중심으로 평가하세요.";
             case MID -> "실무 경험을 바탕으로 문제를 어떻게 해결했는지를 중심으로 평가하세요.";
@@ -257,7 +265,7 @@ public class InterviewAiService {
             return chatClient.prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
-                    .call()
+                    .stream()
                     .content();
         } catch (Exception e) {
             log.error("AI 다음 질문 생성 실패", e);

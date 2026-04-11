@@ -10,11 +10,7 @@ import app.mockly.domain.interview.dto.response.FeedbackDto;
 import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
 import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
-import app.mockly.domain.interview.entity.InterviewFeedback;
-import app.mockly.domain.interview.entity.InterviewMessage;
-import app.mockly.domain.interview.entity.InterviewQuota;
-import app.mockly.domain.interview.entity.InterviewSession;
-import app.mockly.domain.interview.entity.InterviewSessionStatus;
+import app.mockly.domain.interview.entity.*;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
@@ -28,20 +24,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import reactor.core.publisher.Flux;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.List;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -53,7 +48,6 @@ public class InterviewService {
             "안녕하세요, 오늘 면접에 참여해 주셔서 감사합니다."
     );
     private static final Random RANDOM = new Random();
-
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
     private final InterviewFeedbackRepository interviewFeedbackRepository;
@@ -77,16 +71,9 @@ public class InterviewService {
                 request.totalQuestions(), request.selfIntroduction());
         interviewSessionRepository.save(session);
 
-        String firstQuestion = interviewAiService.generateFirstQuestion(
-                request.position(), request.experienceLevel(), request.interviewType(), request.selfIntroduction());
-        String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
-        String firstQuestionWithGreeting = greeting + " " + firstQuestion;
-
         session.incrementQuestionNumber();
-        interviewMessageRepository.save(
-                InterviewMessage.createInterviewerMessage(session, firstQuestionWithGreeting, session.getCurrentQuestionNumber()));
-
-        return CreateInterviewResponse.from(session, firstQuestionWithGreeting);
+        String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
+        return CreateInterviewResponse.from(session, greeting);
     }
 
     @Transactional
@@ -121,14 +108,33 @@ public class InterviewService {
         }
 
         session.incrementQuestionNumber();
-        List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-        String nextQuestion = interviewAiService.generateNextQuestion(
-                history, session.getInterviewType(),
-                session.getPosition(), session.getExperienceLevel(), session.getSelfIntroduction());
-        interviewMessageRepository.save(
-                InterviewMessage.createInterviewerMessage(session, nextQuestion, session.getCurrentQuestionNumber()));
+        return SubmitAnswerResponse.inProgress(session);
+    }
 
-        return SubmitAnswerResponse.withNextQuestion(session, nextQuestion);
+    public Flux<String> prepareQuestion(UUID sessionId, UUID userId) {
+        InterviewSession interviewSession = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        int questionNumber = interviewSession.getCurrentQuestionNumber();
+
+        Optional<InterviewMessage> existing = interviewMessageRepository.findBySessionIdAndQuestionNumberAndRole(sessionId, questionNumber, InterviewMessageRole.INTERVIEWER);
+        if (existing.isPresent()) {
+            return Flux.just(existing.get().getContent());
+        }
+
+        if (questionNumber == 1) {
+            return interviewAiService.generateFirstQuestion(interviewSession);
+        }
+        List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
+        return interviewAiService.generateNextQuestion(interviewSession, history);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveQuestion(UUID sessionId, int questionNumber, String content) {
+        InterviewSession interviewSession = interviewSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+
+        InterviewMessage interviewerMessage = InterviewMessage.createInterviewerMessage(interviewSession, content, questionNumber);
+        interviewMessageRepository.save(interviewerMessage);
     }
 
     @Transactional(readOnly = true)
@@ -149,6 +155,12 @@ public class InterviewService {
                 ? interviewSessionRepository.findByUserIdAndStatus(userId, status, pageable)
                 : interviewSessionRepository.findByUserId(userId, pageable);
         return GetSessionListResponse.from(result);
+    }
+
+    public int getCurrentQuestionNumber(UUID sessionId, UUID userId) {
+        return interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND))
+                .getCurrentQuestionNumber();
     }
 
     private String serializeExpertFeedbacks(InterviewFeedbackResult result) {

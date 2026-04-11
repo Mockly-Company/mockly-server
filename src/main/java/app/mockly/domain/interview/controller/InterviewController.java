@@ -12,10 +12,14 @@ import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -52,6 +56,44 @@ public class InterviewController {
     ) {
         GetSessionDetailResponse response = interviewService.getSessionDetail(userId, sessionId);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping(value = "/{sessionId}/questions/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        SseEmitter emitter = new SseEmitter(60_000L);
+        StringBuilder fullText = new StringBuilder();
+        int questionNumber = interviewService.getCurrentQuestionNumber(sessionId, userId);
+
+        interviewService.prepareQuestion(sessionId, userId)
+            .subscribe(
+                token -> {
+                    fullText.append(token);
+                    try {
+                        emitter.send(SseEmitter.event().name("token").data(token));
+                    } catch (IOException e) {
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("error")
+                                .data(Map.of("message", "질문 생성 중 오류가 발생했습니다.")));
+                    } catch (IOException ignored) {}
+                    emitter.completeWithError(error);
+                },
+                () -> {
+                    interviewService.saveQuestion(sessionId, questionNumber, fullText.toString());
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data("{}"));
+                    } catch (IOException ignored) {}
+                    emitter.complete();
+                });
+
+        return emitter;
     }
 
     @PostMapping("/{sessionId}/answer")
