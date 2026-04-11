@@ -239,7 +239,7 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.isCompleted").value(true))
-                .andExpect(jsonPath("$.data.closingMessage").exists())
+
                 .andExpect(jsonPath("$.data.feedback.overallScore").value(75))
                 .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].expertRole").value("기술 면접관"))
                 .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].score").value(75))

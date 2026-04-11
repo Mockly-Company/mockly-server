@@ -27,7 +27,6 @@ public class SubmitAnswerDocs {
             fieldWithPath("currentQuestionNumber").description("현재 질문 번호").type(SimpleType.NUMBER),
             fieldWithPath("totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
             fieldWithPath("isCompleted").description("면접 완료 여부").type(SimpleType.BOOLEAN),
-            fieldWithPath("closingMessage").description("마무리 멘트 (완료 시)").type(SimpleType.STRING).optional(),
             fieldWithPath("feedback").description("피드백 (완료 시)").type(JsonFieldType.OBJECT).optional(),
             fieldWithPath("feedback.overallScore").description("면접 종합 점수 (1~100)").type(SimpleType.NUMBER).optional(),
             fieldWithPath("feedback.expertFeedbacks").description("전문가별 평가 목록").type(JsonFieldType.ARRAY).optional(),
