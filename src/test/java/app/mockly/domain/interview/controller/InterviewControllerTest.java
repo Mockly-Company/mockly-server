@@ -8,6 +8,7 @@ import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
 import app.mockly.domain.interview.controller.docs.SessionListDocs;
+import app.mockly.domain.interview.controller.docs.StreamQuestionDocs;
 import app.mockly.domain.interview.controller.docs.SubmitAnswerDocs;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
@@ -18,6 +19,7 @@ import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.entity.InterviewType;
+import reactor.core.publisher.Flux;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
@@ -46,8 +48,11 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -97,10 +102,10 @@ class InterviewControllerTest {
         validAccessToken = jwtService.generateAccessToken(testUser.getId());
 
         given(tokenBlacklistService.isBlacklisted(anyString())).willReturn(false);
-        given(interviewAiService.generateFirstQuestion(anyString(), any(ExperienceLevel.class), any(InterviewType.class), anyString()))
-                .willReturn("자기소개를 해주세요.");
-        given(interviewAiService.generateNextQuestion(any(), any(InterviewType.class), anyString(), any(ExperienceLevel.class), anyString()))
-                .willReturn("다음 면접 질문을 하겠습니다.");
+        given(interviewAiService.generateFirstQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class)))
+                .willReturn(Flux.just("자기소개를 해주세요."));
+        given(interviewAiService.generateNextQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class), any()))
+                .willReturn(Flux.just("다음 면접 질문을 하겠습니다."));
         given(interviewAiService.generateFeedback(any(), any(InterviewType.class), any(PlanTier.class)))
                 .willReturn(new InterviewFeedbackResult(
                         75,
@@ -138,9 +143,8 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sessionId").exists())
                 .andExpect(jsonPath("$.data.position").value("백엔드 개발자"))
-                .andExpect(jsonPath("$.data.currentQuestionNumber").value(1))
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.firstQuestion").value("자기소개를 해주세요."))
+                .andExpect(jsonPath("$.data.greeting").exists())
                 .andDo(document("interview-create",
                         resource(CreateInterviewDocs.success())
                 ));
@@ -202,7 +206,7 @@ class InterviewControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/interviews/:sessionId/answer - 성공: 중간 답변, 다음 질문 반환")
+    @DisplayName("POST /api/interviews/:sessionId/answer - 성공: 중간 답변 제출")
     void submitAnswer_withNextQuestion() throws Exception {
         InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
         SubmitAnswerRequest request = new SubmitAnswerRequest("JVM의 가비지 컬렉션은 메모리를 자동으로 관리합니다.");
@@ -215,7 +219,7 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.isCompleted").value(false))
-                .andExpect(jsonPath("$.data.nextQuestion").value("다음 면접 질문을 하겠습니다."))
+                .andExpect(jsonPath("$.data.currentQuestionNumber").value(2))
                 .andDo(document("interview-submit-answer",
                         resource(SubmitAnswerDocs.success())
                 ));
@@ -390,6 +394,42 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andDo(document("interview-create-unauthorized",
                         resource(CreateInterviewDocs.unauthorized())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/questions/stream - 성공: SSE 스트리밍 시작")
+    void streamQuestion_success() throws Exception {
+        InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
+
+        org.springframework.test.web.servlet.MvcResult mvcResult = mockMvc.perform(
+                        get("/api/interviews/{sessionId}/questions/stream", session.getId())
+                                .header("Authorization", "Bearer " + validAccessToken)
+                                .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(mvcResult))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andDo(document("interview-stream-question",
+                        resource(StreamQuestionDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/questions/stream - 실패: 세션 없음 (404)")
+    void streamQuestion_sessionNotFound() throws Exception {
+        mockMvc.perform(
+                        get("/api/interviews/{sessionId}/questions/stream", java.util.UUID.randomUUID())
+                                .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andDo(document("interview-stream-question-not-found",
+                        resource(StreamQuestionDocs.notFound())
                 ));
     }
 }

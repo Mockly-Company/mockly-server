@@ -32,16 +32,15 @@ public class CreateInterviewDocs {
             fieldWithPath("experienceLevel").description("경력 수준").type(SimpleType.STRING),
             fieldWithPath("interviewType").description("면접 유형").type(SimpleType.STRING),
             fieldWithPath("totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
-            fieldWithPath("currentQuestionNumber").description("현재 질문 번호 (1)").type(SimpleType.NUMBER),
             fieldWithPath("status").description("세션 상태 (IN_PROGRESS)").type(SimpleType.STRING),
-            fieldWithPath("firstQuestion").description("AI가 생성한 첫 번째 면접 질문").type(SimpleType.STRING)
+            fieldWithPath("greeting").description("면접관 인삿말").type(SimpleType.STRING)
     );
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
                 .tag("Interview")
                 .summary("면접 세션 생성")
-                .description("AI 면접 세션을 생성하고 첫 번째 질문을 반환합니다. 플랜별 일일 쿼터와 질문 개수 제한이 적용됩니다.")
+                .description("AI 면접 세션을 생성합니다. 첫 번째 질문은 GET /{sessionId}/questions/stream SSE 엔드포인트로 수신합니다. 플랜별 일일 쿼터와 질문 개수 제한이 적용됩니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .requestFields(REQUEST_FIELDS)
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))

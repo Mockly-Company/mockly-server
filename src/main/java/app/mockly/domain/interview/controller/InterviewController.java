@@ -11,6 +11,7 @@ import app.mockly.domain.interview.service.InterviewService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/interviews")
 @RequiredArgsConstructor
@@ -86,7 +88,11 @@ public class InterviewController {
                     emitter.completeWithError(error);
                 },
                 () -> {
-                    interviewService.saveQuestion(sessionId, questionNumber, fullText.toString());
+                    try {
+                        interviewService.saveQuestion(sessionId, questionNumber, fullText.toString());
+                    } catch (Exception e) {
+                        log.error("질문 저장 실패 sessionId={} questionNumber={}", sessionId, questionNumber, e);
+                    }
                     try {
                         emitter.send(SseEmitter.event().name("done").data("{}"));
                     } catch (IOException ignored) {}
