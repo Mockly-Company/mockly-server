@@ -22,6 +22,7 @@ import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -39,6 +40,7 @@ import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class InterviewService {
@@ -69,6 +71,13 @@ public class InterviewService {
         InterviewSession session = InterviewSession.create(
                 user, request.position(), request.experienceLevel(), request.interviewType(),
                 request.totalQuestions(), request.selfIntroduction());
+
+        List<String> candidates = interviewAiService.extractKeywordCandidates(
+                request.selfIntroduction(), request.position());
+        log.info("keyword candidates: {}", candidates);
+        String keyword = candidates.get(RANDOM.nextInt(candidates.size()));
+        log.info("selected keyword: {}", keyword);
+        session.setFirstQuestionKeyword(keyword);
         interviewSessionRepository.save(session);
 
         session.incrementQuestionNumber();

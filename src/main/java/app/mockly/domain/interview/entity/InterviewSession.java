@@ -51,6 +51,9 @@ public class InterviewSession extends BaseEntity {
 
     private Instant completedAt;
 
+    @Column(length = 100)
+    private String firstQuestionKeyword;
+
     public static InterviewSession create(User user, String position, ExperienceLevel experienceLevel,
                                           InterviewType interviewType, int totalQuestions, String selfIntroduction) {
         return InterviewSession.builder()
@@ -76,6 +79,10 @@ public class InterviewSession extends BaseEntity {
 
     public void abandon() {
         this.status = InterviewSessionStatus.ABANDONED;
+    }
+
+    public void setFirstQuestionKeyword(String keyword) {
+        this.firstQuestionKeyword = keyword;
     }
 
     public boolean isAllQuestionsAnswered() {

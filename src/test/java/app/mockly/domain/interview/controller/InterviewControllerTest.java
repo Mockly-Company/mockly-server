@@ -102,6 +102,8 @@ class InterviewControllerTest {
         validAccessToken = jwtService.generateAccessToken(testUser.getId());
 
         given(tokenBlacklistService.isBlacklisted(anyString())).willReturn(false);
+        given(interviewAiService.extractKeywordCandidates(anyString(), anyString()))
+                .willReturn(List.of("JPA", "Spring Boot", "REST API"));
         given(interviewAiService.generateFirstQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class)))
                 .willReturn(Flux.just("자기소개를 해주세요."));
         given(interviewAiService.generateNextQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class), any()))
