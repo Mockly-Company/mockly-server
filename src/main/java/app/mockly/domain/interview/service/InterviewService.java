@@ -217,4 +217,14 @@ public class InterviewService {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "현재 플랜에서 선택할 수 없는 질문 개수입니다.");
         }
     }
+
+    @Transactional
+    public void abandonSession(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        if (!session.isInProgress()) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "이미 종료된 면접 세션입니다.");
+        }
+        session.abandon();
+    }
 }

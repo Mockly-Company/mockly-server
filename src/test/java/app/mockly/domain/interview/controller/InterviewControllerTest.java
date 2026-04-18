@@ -5,6 +5,7 @@ import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
+import app.mockly.domain.interview.controller.docs.AbandonSessionDocs;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
 import app.mockly.domain.interview.controller.docs.SessionListDocs;
@@ -46,6 +47,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -396,6 +398,38 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andDo(document("interview-create-unauthorized",
                         resource(CreateInterviewDocs.unauthorized())
+                ));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/interviews/:sessionId/abandon - 성공: 세션 포기")
+    void abandonSession_success() throws Exception {
+        InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
+
+        mockMvc.perform(patch("/api/interviews/{sessionId}/abandon", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andDo(document("interview-abandon-session",
+                        resource(AbandonSessionDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/interviews/:sessionId/abandon - 실패: 이미 완료된 세션 (400)")
+    void abandonSession_alreadyCompleted() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED);
+
+        mockMvc.perform(patch("/api/interviews/{sessionId}/abandon", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andDo(document("interview-abandon-session-already-completed",
+                        resource(AbandonSessionDocs.alreadyCompleted())
                 ));
     }
 

@@ -24,4 +24,5 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     Page<InterviewSession> findByUserIdAndStatus(UUID userId, InterviewSessionStatus status, Pageable pageable);
 
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
+
 }

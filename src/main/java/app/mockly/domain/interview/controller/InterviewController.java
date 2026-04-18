@@ -114,4 +114,13 @@ public class InterviewController {
         SubmitAnswerResponse response = interviewService.submitAnswer(userId, sessionId, request);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
+
+    @PatchMapping("/{sessionId}/abandon")
+    public ResponseEntity<ApiResponse<Void>> abandonSession(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        interviewService.abandonSession(userId, sessionId);
+        return ResponseEntity.ok(ApiResponse.noContent());
+    }
 }
