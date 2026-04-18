@@ -7,6 +7,8 @@ import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.interview.controller.docs.AbandonSessionDocs;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
+import app.mockly.domain.interview.controller.docs.FeedbackDocs;
+import app.mockly.domain.interview.controller.docs.QuotaDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
 import app.mockly.domain.interview.controller.docs.SessionListDocs;
 import app.mockly.domain.interview.controller.docs.StreamQuestionDocs;
@@ -15,12 +17,14 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.entity.ExperienceLevel;
+import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.entity.InterviewType;
 import reactor.core.publisher.Flux;
+import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
@@ -85,6 +89,9 @@ class InterviewControllerTest {
 
     @Autowired
     private InterviewSessionRepository interviewSessionRepository;
+
+    @Autowired
+    private InterviewFeedbackRepository interviewFeedbackRepository;
 
     @Autowired
     private InterviewMessageRepository interviewMessageRepository;
@@ -398,6 +405,81 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andDo(document("interview-create-unauthorized",
                         resource(CreateInterviewDocs.unauthorized())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 성공: FREE 플랜 쿼터 조회")
+    void getQuota_success() throws Exception {
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.dailyLimit").value(1))
+                .andExpect(jsonPath("$.data.usedToday").value(0))
+                .andExpect(jsonPath("$.data.remaining").value(1))
+                .andExpect(jsonPath("$.data.maxQuestionsPerSession").value(3))
+                .andDo(document("interview-get-quota",
+                        resource(QuotaDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 성공: 오늘 세션 사용 후 남은 쿼터 조회")
+    void getQuota_afterUsed() throws Exception {
+        interviewSessionRepository.save(InterviewSession.create(
+                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3,
+                "1년차 백엔드 개발자입니다."
+        ));
+
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.usedToday").value(1))
+                .andExpect(jsonPath("$.data.remaining").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/feedback - 성공: 피드백 조회")
+    void getFeedback_success() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED);
+        interviewFeedbackRepository.save(InterviewFeedback.create(
+                session, 80,
+                "[{\"expertRole\":\"기술 면접관\",\"score\":80,\"evaluation\":\"전반적으로 좋습니다.\"}]",
+                "논리적인 답변 구조",
+                "더 구체적인 사례 제시 필요",
+                null
+        ));
+
+        mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.overallScore").value(80))
+                .andExpect(jsonPath("$.data.expertFeedbacks[0].expertRole").value("기술 면접관"))
+                .andExpect(jsonPath("$.data.strengths").value("논리적인 답변 구조"))
+                .andExpect(jsonPath("$.data.improvements").value("더 구체적인 사례 제시 필요"))
+                .andDo(document("interview-get-feedback",
+                        resource(FeedbackDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/feedback - 실패: 피드백 없음 (404)")
+    void getFeedback_notFound() throws Exception {
+        InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
+
+        mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andDo(document("interview-get-feedback-not-found",
+                        resource(FeedbackDocs.notFound())
                 ));
     }
 

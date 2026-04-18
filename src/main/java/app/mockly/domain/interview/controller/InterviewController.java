@@ -3,6 +3,8 @@ package app.mockly.domain.interview.controller;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
+import app.mockly.domain.interview.dto.response.FeedbackDto;
+import app.mockly.domain.interview.dto.response.GetQuotaResponse;
 import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
 import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
@@ -33,6 +35,14 @@ import java.util.UUID;
 public class InterviewController {
 
     private final InterviewService interviewService;
+
+    @GetMapping("/quota")
+    public ResponseEntity<ApiResponse<GetQuotaResponse>> getQuota(
+            @AuthenticationPrincipal UUID userId
+    ) {
+        GetQuotaResponse response = interviewService.getQuota(userId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<CreateInterviewResponse>> createSession(
@@ -112,6 +122,15 @@ public class InterviewController {
             @RequestBody @Valid SubmitAnswerRequest request
     ) {
         SubmitAnswerResponse response = interviewService.submitAnswer(userId, sessionId, request);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/{sessionId}/feedback")
+    public ResponseEntity<ApiResponse<FeedbackDto>> getFeedback(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        FeedbackDto response = interviewService.getFeedback(userId, sessionId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

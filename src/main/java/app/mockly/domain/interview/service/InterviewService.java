@@ -7,6 +7,7 @@ import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
 import app.mockly.domain.interview.dto.response.FeedbackDto;
+import app.mockly.domain.interview.dto.response.GetQuotaResponse;
 import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
 import app.mockly.domain.interview.dto.response.GetSessionListResponse;
 import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
@@ -216,6 +217,29 @@ public class InterviewService {
         if (!allowed.contains(totalQuestions)) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "현재 플랜에서 선택할 수 없는 질문 개수입니다.");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public GetQuotaResponse getQuota(UUID userId) {
+        PlanTier plan = getUserPlan(userId);
+        InterviewQuota quota = getQuota(plan);
+
+        ZoneId kst = ZoneId.of("Asia/Seoul");
+        ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
+        Instant startInstant = startOfDay.toInstant();
+        Instant endInstant = startOfDay.plusDays(1).toInstant();
+
+        long usedToday = interviewSessionRepository.countTodaySessions(userId, startInstant, endInstant);
+        return GetQuotaResponse.of(quota.getDailyLimit(), usedToday, quota.getMaxQuestionsPerSession());
+    }
+
+    @Transactional(readOnly = true)
+    public FeedbackDto getFeedback(UUID userId, UUID sessionId) {
+        interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        return interviewFeedbackRepository.findBySessionId(sessionId)
+                .map(f -> FeedbackDto.from(f, objectMapper))
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "아직 피드백이 생성되지 않은 세션입니다."));
     }
 
     @Transactional
