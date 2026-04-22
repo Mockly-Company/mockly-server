@@ -188,14 +188,14 @@ public class InterviewService {
                 .orElse(PlanTier.FREE);
     }
 
-    private InterviewQuota getQuota(PlanTier plan) {
+    private InterviewQuota getInterviewQuota(PlanTier plan) {
         return interviewQuotaRepository.findById(plan)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "면접 쿼터 설정을 찾을 수 없습니다."));
     }
 
     // TODO: 추후 KST 기준을 User별 timezone 지원으로 확장
     private void validateQuota(UUID userId, PlanTier plan) {
-        int limit = getQuota(plan).getDailyLimit();
+        int limit = getInterviewQuota(plan).getDailyLimit();
 
         ZoneId kst = ZoneId.of("Asia/Seoul");
         ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
@@ -210,7 +210,7 @@ public class InterviewService {
 
     // preset {3,5,10} 중 플랜의 maxQuestionsPerSession 이하인 값만 허용
     private void validateQuestionCount(int totalQuestions, PlanTier plan) {
-        int max = getQuota(plan).getMaxQuestionsPerSession();
+        int max = getInterviewQuota(plan).getMaxQuestionsPerSession();
         Set<Integer> allowed = Set.of(3, 5, 10).stream()
                 .filter(q -> q <= max)
                 .collect(Collectors.toSet());
@@ -222,7 +222,7 @@ public class InterviewService {
     @Transactional(readOnly = true)
     public GetQuotaResponse getQuota(UUID userId) {
         PlanTier plan = getUserPlan(userId);
-        InterviewQuota quota = getQuota(plan);
+        InterviewQuota quota = getInterviewQuota(plan);
 
         ZoneId kst = ZoneId.of("Asia/Seoul");
         ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);

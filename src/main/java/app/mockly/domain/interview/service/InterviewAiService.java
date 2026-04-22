@@ -8,6 +8,7 @@ import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.ApiStatusCode;
+import app.mockly.global.config.InterviewAiProperties;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -24,10 +25,13 @@ public class InterviewAiService {
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+    private final InterviewAiProperties interviewAiProperties;
 
-    public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper) {
+    public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper,
+                              InterviewAiProperties interviewAiProperties) {
         this.chatClient = chatClientBuilder.build();
         this.objectMapper = objectMapper;
+        this.interviewAiProperties = interviewAiProperties;
     }
 
     public Flux<String> generateFirstQuestion(InterviewSession session) {
@@ -320,8 +324,8 @@ public class InterviewAiService {
         try {
             String raw = chatClient.prompt()
                     .options(OpenAiChatOptions.builder()
-                            .model("gpt-4o-mini")
-                            .temperature(0.7)
+                            .model(interviewAiProperties.getKeywordExtractionModel())
+                            .temperature(interviewAiProperties.getKeywordExtractionTemperature())
                             .build())
                     .user(prompt)
                     .call()
