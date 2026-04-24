@@ -115,6 +115,7 @@ public class InterviewService {
         return SubmitAnswerResponse.inProgress(session);
     }
 
+    @Transactional(readOnly = true)
     public Flux<String> prepareQuestion(UUID sessionId, UUID userId) {
         InterviewSession interviewSession = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
@@ -161,6 +162,7 @@ public class InterviewService {
         return GetSessionListResponse.from(result);
     }
 
+    @Transactional(readOnly = true)
     public int getCurrentQuestionNumber(UUID sessionId, UUID userId) {
         return interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND))
