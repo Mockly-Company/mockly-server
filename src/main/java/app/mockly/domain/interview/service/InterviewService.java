@@ -58,9 +58,9 @@ public class InterviewService {
     private final SubscriptionRepository subscriptionRepository;
     private final InterviewAiService interviewAiService;
     private final InterviewQuotaRepository interviewQuotaRepository;
+    private final InterviewSessionWriter interviewSessionWriter;
     private final ObjectMapper objectMapper;
 
-    @Transactional
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
@@ -69,19 +69,13 @@ public class InterviewService {
         validateQuota(userId, plan);
         validateQuestionCount(request.totalQuestions(), plan);
 
-        InterviewSession session = InterviewSession.create(
-                user, request.position(), request.experienceLevel(), request.interviewType(),
-                request.totalQuestions(), request.selfIntroduction());
-
         List<String> candidates = interviewAiService.extractKeywordCandidates(
                 request.selfIntroduction(), request.position());
         log.info("keyword candidates: {}", candidates);
         String keyword = candidates.get(RANDOM.nextInt(candidates.size()));
         log.info("selected keyword: {}", keyword);
-        session.setFirstQuestionKeyword(keyword);
-        interviewSessionRepository.save(session);
 
-        session.incrementQuestionNumber();
+        InterviewSession session = interviewSessionWriter.saveNewSession(user, request, keyword);
         String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
         return CreateInterviewResponse.from(session, greeting);
     }
