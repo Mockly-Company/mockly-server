@@ -2,6 +2,7 @@ package app.mockly.domain.interview.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 
@@ -18,6 +19,7 @@ public record InterviewFeedbackResult(
         @JsonProperty(required = true, value = "improvements")
         @JsonPropertyDescription("전반적인 개선점 요약")
         String improvements,
+        @Nullable
         @JsonProperty(required = true, value = "detailedAnalysis")
         @JsonPropertyDescription("질문별 상세 분석 (PRO 플랜 전용, 그 외 플랜은 null)")
         String detailedAnalysis
