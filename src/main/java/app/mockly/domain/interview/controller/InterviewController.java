@@ -1,5 +1,6 @@
 package app.mockly.domain.interview.controller;
 
+import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
@@ -78,9 +79,10 @@ public class InterviewController {
     ) {
         SseEmitter emitter = new SseEmitter(60_000L);
         StringBuilder fullText = new StringBuilder();
-        int questionNumber = interviewService.getCurrentQuestionNumber(sessionId, userId);
+        QuestionStream qs = interviewService.getQuestionStream(sessionId, userId);
+        int questionNumber = qs.questionNumber();
 
-        interviewService.prepareQuestion(sessionId, userId)
+        qs.tokens()
             .subscribe(
                 token -> {
                     fullText.append(token);

@@ -3,6 +3,7 @@ package app.mockly.domain.interview.service;
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
+import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
@@ -116,21 +117,21 @@ public class InterviewService {
     }
 
     @Transactional(readOnly = true)
-    public Flux<String> prepareQuestion(UUID sessionId, UUID userId) {
+    public QuestionStream getQuestionStream(UUID sessionId, UUID userId) {
         InterviewSession interviewSession = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
         int questionNumber = interviewSession.getCurrentQuestionNumber();
 
         Optional<InterviewMessage> existing = interviewMessageRepository.findBySessionIdAndQuestionNumberAndRole(sessionId, questionNumber, InterviewMessageRole.INTERVIEWER);
         if (existing.isPresent()) {
-            return Flux.just(existing.get().getContent());
+            return new QuestionStream(questionNumber, Flux.just(existing.get().getContent()));
         }
 
-        if (questionNumber == 1) {
-            return interviewAiService.generateFirstQuestion(interviewSession);
-        }
-        List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-        return interviewAiService.generateNextQuestion(interviewSession, history);
+        Flux<String> flux = questionNumber == 1
+                ? interviewAiService.generateFirstQuestion(interviewSession)
+                : interviewAiService.generateNextQuestion(interviewSession,
+                        interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId));
+        return new QuestionStream(questionNumber, flux);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -162,17 +163,11 @@ public class InterviewService {
         return GetSessionListResponse.from(result);
     }
 
-    @Transactional(readOnly = true)
-    public int getCurrentQuestionNumber(UUID sessionId, UUID userId) {
-        return interviewSessionRepository.findByIdAndUserId(sessionId, userId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND))
-                .getCurrentQuestionNumber();
-    }
-
     private String serializeExpertFeedbacks(InterviewFeedbackResult result) {
         try {
             return objectMapper.writeValueAsString(result.expertFeedbacks());
         } catch (Exception e) {
+            log.error("전문가 피드백 직렬화 실패", e);
             return "[]";
         }
     }
@@ -189,16 +184,19 @@ public class InterviewService {
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "면접 쿼터 설정을 찾을 수 없습니다."));
     }
 
-    // TODO: 추후 KST 기준을 User별 timezone 지원으로 확장
-    private void validateQuota(UUID userId, PlanTier plan) {
-        int limit = getInterviewQuota(plan).getDailyLimit();
+    // TODO: timezone 지원 시 TimeUtils 또는 TimeRangeProvider로 이전
+    private record TodayRange(Instant start, Instant end) {}
 
+    private TodayRange getTodayKstRange() {
         ZoneId kst = ZoneId.of("Asia/Seoul");
         ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
-        Instant startInstant = startOfDay.toInstant();
-        Instant endInstant = startOfDay.plusDays(1).toInstant();
+        return new TodayRange(startOfDay.toInstant(), startOfDay.plusDays(1).toInstant());
+    }
 
-        long todayCount = interviewSessionRepository.countTodaySessions(userId, startInstant, endInstant);
+    private void validateQuota(UUID userId, PlanTier plan) {
+        int limit = getInterviewQuota(plan).getDailyLimit();
+        TodayRange range = getTodayKstRange();
+        long todayCount = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
         if (todayCount >= limit) {
             throw new BusinessException(ApiStatusCode.QUOTA_EXCEEDED);
         }
@@ -219,13 +217,8 @@ public class InterviewService {
     public GetQuotaResponse getQuota(UUID userId) {
         PlanTier plan = getUserPlan(userId);
         InterviewQuota quota = getInterviewQuota(plan);
-
-        ZoneId kst = ZoneId.of("Asia/Seoul");
-        ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
-        Instant startInstant = startOfDay.toInstant();
-        Instant endInstant = startOfDay.plusDays(1).toInstant();
-
-        long usedToday = interviewSessionRepository.countTodaySessions(userId, startInstant, endInstant);
+        TodayRange range = getTodayKstRange();
+        long usedToday = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
         return GetQuotaResponse.of(quota.getDailyLimit(), usedToday, quota.getMaxQuestionsPerSession());
     }
 
