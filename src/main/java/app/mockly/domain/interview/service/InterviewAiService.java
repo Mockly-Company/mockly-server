@@ -10,8 +10,10 @@ import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.InterviewAiProperties;
 import app.mockly.global.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.AdvisorParams;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
@@ -197,8 +199,6 @@ public class InterviewAiService {
     public InterviewFeedbackResult generateFeedback(List<InterviewMessage> history, InterviewType interviewType, PlanTier plan) {
         String systemPrompt = """
                 당신은 면접 평가 시스템입니다. 면접이 끝난 후 지원자의 답변을 전문가 관점에서 평가합니다.
-                반드시 지정된 JSON 형식으로만 응답하세요.
-
                 [종합 점수]
                 overallScore는 전체 면접을 종합적으로 평가한 독립 점수입니다 (1~100).
                 전문가 점수의 단순 평균이 아니라, 면접 전반의 역량을 종합 판단하세요.
@@ -223,6 +223,7 @@ public class InterviewAiService {
 
         try {
             return chatClient.prompt()
+                    .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
                     .system(systemPrompt)
                     .user(userPrompt)
                     .call()
@@ -295,7 +296,8 @@ public class InterviewAiService {
 
     private record HistoryEntry(String role, String content) {}
 
-    private record KeywordCandidates(List<String> keywords) {}
+    private record KeywordCandidates(
+            @JsonProperty(required = true, value = "keywords") List<String> keywords) {}
 
     public List<String> extractKeywordCandidates(String selfIntroduction, String position) {
         String prompt = """
@@ -316,22 +318,20 @@ public class InterviewAiService {
                \s
                 3. 위 기준을 가장 잘 만족하는 키워드 3~5개를 선택한다.
                \s
-                코드 블록 없이 순수 JSON으로만 응답: {"keywords": ["...", ...]}
-
                 포지션: %s
                 자기소개: %s
                \s""".formatted(position, selfIntroduction);
+
         try {
-            String raw = chatClient.prompt()
+            KeywordCandidates result = chatClient.prompt()
+                    .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
                     .options(OpenAiChatOptions.builder()
                             .model(interviewAiProperties.getKeywordExtractionModel())
                             .temperature(interviewAiProperties.getKeywordExtractionTemperature())
                             .build())
                     .user(prompt)
                     .call()
-                    .content();
-            log.info("keyword extraction raw response: {}", raw);
-            KeywordCandidates result = objectMapper.readValue(raw, KeywordCandidates.class);
+                    .entity(KeywordCandidates.class);
             if (result.keywords() == null || result.keywords().isEmpty()) {
                 log.error("키워드 후보 추출 결과가 비어있음");
                 throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);

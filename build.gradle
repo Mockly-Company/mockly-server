@@ -29,7 +29,7 @@ repositories {
 
 ext {
 	set('snippetsDir', file("build/generated-snippets"))
-	set('springAiVersion', "1.0.3")
+	set('springAiVersion', "1.1.4")
 }
 
 openapi3 {
