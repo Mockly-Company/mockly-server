@@ -12,6 +12,8 @@ import app.mockly.global.config.InterviewAiProperties;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.AdvisorParams;
 import org.springframework.ai.chat.client.ChatClient;
@@ -28,12 +30,14 @@ public class InterviewAiService {
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
     private final InterviewAiProperties interviewAiProperties;
+    private final MeterRegistry meterRegistry;
 
     public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper,
-                              InterviewAiProperties interviewAiProperties) {
+                              InterviewAiProperties interviewAiProperties, MeterRegistry meterRegistry) {
         this.chatClient = chatClientBuilder.build();
         this.objectMapper = objectMapper;
         this.interviewAiProperties = interviewAiProperties;
+        this.meterRegistry = meterRegistry;
     }
 
     public Flux<String> generateFirstQuestion(InterviewSession session) {
@@ -221,14 +225,22 @@ public class InterviewAiService {
                 위 면접 내용을 평가하여 피드백을 제공하세요.
                 """.formatted(interviewType.getDescription(), formatHistory(history));
 
+        Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            return chatClient.prompt()
+            InterviewFeedbackResult result = chatClient.prompt()
                     .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
                     .system(systemPrompt)
                     .user(userPrompt)
                     .call()
                     .entity(InterviewFeedbackResult.class);
+            sample.stop(Timer.builder("ai.feedback.duration")
+                    .tag("status", "success")
+                    .register(meterRegistry));
+            return result;
         } catch (Exception e) {
+            sample.stop(Timer.builder("ai.feedback.duration")
+                    .tag("status", "error")
+                    .register(meterRegistry));
             log.error("AI 피드백 생성 실패", e);
             throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
         }
