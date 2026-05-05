@@ -39,7 +39,8 @@ public class SecurityConfig {
                         "/swagger-ui.html",
                         "/openapi3.yaml",
                         "/actuator/health",
-                        "/actuator/prometheus"
+                        "/actuator/prometheus",
+                        "/api/loadtest/**"
                 )
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
