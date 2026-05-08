@@ -3,13 +3,10 @@ package app.mockly.domain.interview.controller;
 import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
-import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.FeedbackDto;
-import app.mockly.domain.interview.dto.response.GetQuotaResponse;
-import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
-import app.mockly.domain.interview.dto.response.GetSessionListResponse;
-import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.dto.response.*;
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
+import app.mockly.domain.interview.service.FeedbackSseManager;
 import app.mockly.domain.interview.service.InterviewService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -33,6 +30,7 @@ import java.util.UUID;
 public class InterviewController {
 
     private final InterviewService interviewService;
+    private final FeedbackSseManager feedbackSseManager;
 
     @GetMapping("/quota")
     public ResponseEntity<ApiResponse<GetQuotaResponse>> getQuota(
@@ -124,12 +122,31 @@ public class InterviewController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-    @GetMapping("/{sessionId}/feedback")
-    public ResponseEntity<ApiResponse<FeedbackDto>> getFeedback(
+    @GetMapping(value = "/{sessionId}/feedback/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter feedbackEvents(
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID sessionId
     ) {
-        FeedbackDto response = interviewService.getFeedback(userId, sessionId);
+        SseEmitter emitter = feedbackSseManager.connect(sessionId, 60_000L);
+        FeedbackStatusInfo statusInfo = interviewService.getFeedbackStatusInfo(userId, sessionId);
+        FeedbackStatus status = statusInfo.feedbackStatus();
+        if (status == FeedbackStatus.COMPLETED || status == FeedbackStatus.FAILED) { // SSE 연결 전 이미 피드백 생성이 끝난 경우
+            feedbackSseManager.send(sessionId, status, statusInfo.failReason());
+            feedbackSseManager.complete(sessionId);
+        }
+        return emitter;
+    }
+
+    @GetMapping("/{sessionId}/feedback")
+    public ResponseEntity<ApiResponse<GetFeedbackResponse>> getFeedback(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        GetFeedbackResponse response = interviewService.getFeedback(userId, sessionId);
+        if (response.feedbackStatus() == FeedbackStatus.PENDING
+                || response.feedbackStatus() == FeedbackStatus.GENERATING) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(response));
+        }
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

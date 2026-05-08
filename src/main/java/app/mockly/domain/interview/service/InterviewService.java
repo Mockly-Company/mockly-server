@@ -2,16 +2,11 @@ package app.mockly.domain.interview.service;
 
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
-import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
-import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.FeedbackDto;
-import app.mockly.domain.interview.dto.response.GetQuotaResponse;
-import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
-import app.mockly.domain.interview.dto.response.GetSessionListResponse;
-import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.dto.response.*;
+import app.mockly.domain.interview.event.FeedbackRequestedEvent;
 import app.mockly.domain.interview.entity.*;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
@@ -25,6 +20,7 @@ import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -61,6 +57,7 @@ public class InterviewService {
     private final InterviewQuotaRepository interviewQuotaRepository;
     private final InterviewSessionWriter interviewSessionWriter;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
         User user = userRepository.findById(userId)
@@ -94,22 +91,9 @@ public class InterviewService {
                 InterviewMessage.createUserMessage(session, request.content(), session.getCurrentQuestionNumber()));
 
         if (session.isAllQuestionsAnswered()) {
-            PlanTier plan = getUserPlan(userId);
-            List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-            InterviewFeedbackResult feedbackResult = interviewAiService.generateFeedback(
-                    history, session.getInterviewType(), plan);
-
-            session.complete();
-            interviewFeedbackRepository.save(InterviewFeedback.create(
-                    session,
-                    feedbackResult.overallScore(),
-                    serializeExpertFeedbacks(feedbackResult),
-                    feedbackResult.strengths(),
-                    feedbackResult.improvements(),
-                    feedbackResult.detailedAnalysis()
-            ));
-
-            return SubmitAnswerResponse.completed(session, feedbackResult);
+            session.startFeedbackGeneration();
+            eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+            return SubmitAnswerResponse.feedbackPending(session);
         }
 
         session.incrementQuestionNumber();
@@ -163,15 +147,6 @@ public class InterviewService {
         return GetSessionListResponse.from(result);
     }
 
-    private String serializeExpertFeedbacks(InterviewFeedbackResult result) {
-        try {
-            return objectMapper.writeValueAsString(result.expertFeedbacks());
-        } catch (Exception e) {
-            log.error("전문가 피드백 직렬화 실패", e);
-            return "[]";
-        }
-    }
-
     // active subscription이 있으면 PlanTier 반환, 없으면 FREE
     private PlanTier getUserPlan(UUID userId) {
         return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
@@ -223,12 +198,34 @@ public class InterviewService {
     }
 
     @Transactional(readOnly = true)
-    public FeedbackDto getFeedback(UUID userId, UUID sessionId) {
-        interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+    public GetFeedbackResponse getFeedback(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
-        return interviewFeedbackRepository.findBySessionId(sessionId)
+
+        FeedbackStatus feedbackStatus = session.getFeedbackStatus();
+        if (feedbackStatus == null) {
+            throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "아직 피드백이 생성되지 않은 세션입니다.");
+        }
+        if (feedbackStatus == FeedbackStatus.FAILED) {
+            return GetFeedbackResponse.failed(session.getFailReason());
+        }
+        if (feedbackStatus == FeedbackStatus.PENDING || feedbackStatus == FeedbackStatus.GENERATING) {
+            return GetFeedbackResponse.generating();
+        }
+        FeedbackDto feedback = interviewFeedbackRepository.findBySessionId(sessionId)
                 .map(f -> FeedbackDto.from(f, objectMapper))
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "아직 피드백이 생성되지 않은 세션입니다."));
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "피드백 데이터를 찾을 수 없습니다."));
+        return GetFeedbackResponse.completed(feedback);
+    }
+
+    @Transactional(readOnly = true)
+    public FeedbackStatusInfo getFeedbackStatusInfo(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        if (session.getFeedbackStatus() == null) {
+            throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "피드백 생성이 시작되지 않은 세션입니다.");
+        }
+        return new FeedbackStatusInfo(session.getFeedbackStatus(), session.getFailReason());
     }
 
     @Transactional
