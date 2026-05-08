@@ -95,6 +95,7 @@ public class InterviewSession extends BaseEntity {
     }
 
     public void markFeedbackFailed(String reason) {
+        if (this.feedbackStatus == FeedbackStatus.COMPLETED) return;
         this.feedbackStatus = FeedbackStatus.FAILED;
         this.failReason = reason != null && reason.length() > 500 ? reason.substring(0, 500) : reason;
     }
