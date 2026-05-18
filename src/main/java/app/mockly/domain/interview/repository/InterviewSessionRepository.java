@@ -1,5 +1,6 @@
 package app.mockly.domain.interview.repository;
 
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import org.springframework.data.domain.Page;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,5 +26,7 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     Page<InterviewSession> findByUserIdAndStatus(UUID userId, InterviewSessionStatus status, Pageable pageable);
 
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
+
+    List<InterviewSession> findByFeedbackStatusInAndUpdatedAtBefore(List<FeedbackStatus> statuses, Instant threshold);
 
 }
