@@ -21,6 +21,7 @@ import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.entity.InterviewType;
 import reactor.core.publisher.Flux;
@@ -229,7 +230,7 @@ class InterviewControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.isCompleted").value(false))
+                .andExpect(jsonPath("$.data.sessionStatus").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.data.currentQuestionNumber").value(2))
                 .andDo(document("interview-submit-answer",
                         resource(SubmitAnswerDocs.success())
@@ -237,8 +238,8 @@ class InterviewControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/interviews/:sessionId/answer - 성공: 마지막 답변, 피드백 반환")
-    void submitAnswer_completed() throws Exception {
+    @DisplayName("POST /api/interviews/:sessionId/answer - 성공: 마지막 답변, 피드백 대기 상태 반환")
+    void submitAnswer_feedbackPending() throws Exception {
         InterviewSession session = saveSession(3, 3, InterviewSessionStatus.IN_PROGRESS);
         SubmitAnswerRequest request = new SubmitAnswerRequest("마지막 질문에 대한 답변입니다.");
 
@@ -249,13 +250,10 @@ class InterviewControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.isCompleted").value(true))
-
-                .andExpect(jsonPath("$.data.feedback.overallScore").value(75))
-                .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].expertRole").value("기술 면접관"))
-                .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].score").value(75))
-                .andDo(document("interview-submit-answer-completed",
-                        resource(SubmitAnswerDocs.successCompleted())
+                .andExpect(jsonPath("$.data.sessionStatus").value("FEEDBACK_PENDING"))
+                .andExpect(jsonPath("$.data.feedback").doesNotExist())
+                .andDo(document("interview-submit-answer-feedback-pending",
+                        resource(SubmitAnswerDocs.feedbackPending())
                 ));
     }
 
@@ -336,6 +334,10 @@ class InterviewControllerTest {
     }
 
     private InterviewSession saveSession(int currentQuestionNumber, int totalQuestions, InterviewSessionStatus status) {
+        return saveSession(currentQuestionNumber, totalQuestions, status, null);
+    }
+
+    private InterviewSession saveSession(int currentQuestionNumber, int totalQuestions, InterviewSessionStatus status, FeedbackStatus feedbackStatus) {
         return interviewSessionRepository.save(
                 InterviewSession.builder()
                         .user(testUser)
@@ -346,6 +348,7 @@ class InterviewControllerTest {
                         .selfIntroduction("1년차 백엔드 개발자로 이커머스 서비스를 개발했습니다.")
                         .currentQuestionNumber(currentQuestionNumber)
                         .status(status)
+                        .feedbackStatus(feedbackStatus)
                         .build()
         );
     }
@@ -444,7 +447,7 @@ class InterviewControllerTest {
     @Test
     @DisplayName("GET /api/interviews/:sessionId/feedback - 성공: 피드백 조회")
     void getFeedback_success() throws Exception {
-        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED);
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
         interviewFeedbackRepository.save(InterviewFeedback.create(
                 session, 80,
                 "[{\"expertRole\":\"기술 면접관\",\"score\":80,\"evaluation\":\"전반적으로 좋습니다.\"}]",
@@ -458,10 +461,11 @@ class InterviewControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.overallScore").value(80))
-                .andExpect(jsonPath("$.data.expertFeedbacks[0].expertRole").value("기술 면접관"))
-                .andExpect(jsonPath("$.data.strengths").value("논리적인 답변 구조"))
-                .andExpect(jsonPath("$.data.improvements").value("더 구체적인 사례 제시 필요"))
+                .andExpect(jsonPath("$.data.feedbackStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.feedback.overallScore").value(80))
+                .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].expertRole").value("기술 면접관"))
+                .andExpect(jsonPath("$.data.feedback.strengths").value("논리적인 답변 구조"))
+                .andExpect(jsonPath("$.data.feedback.improvements").value("더 구체적인 사례 제시 필요"))
                 .andDo(document("interview-get-feedback",
                         resource(FeedbackDocs.success())
                 ));
