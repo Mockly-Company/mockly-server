@@ -19,7 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StaleFeedbackRecoveryJob {
 
-    private static final int STALE_THRESHOLD_MINUTES = 5;
+    private static final int STALE_THRESHOLD_MINUTES = 6;
 
     private final InterviewSessionRepository interviewSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
