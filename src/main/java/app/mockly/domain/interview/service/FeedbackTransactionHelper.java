@@ -1,7 +1,9 @@
 package app.mockly.domain.interview.service;
 
 import app.mockly.domain.interview.dto.FeedbackContext;
+import app.mockly.domain.interview.dto.FeedbackGenerationContext;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
@@ -39,15 +41,16 @@ public class FeedbackTransactionHelper {
         PlanTier planTier = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
                 .map(sub -> sub.getSubscriptionPlan().getProduct().getPlanTier())
                 .orElse(PlanTier.FREE);
-        return new FeedbackContext(
+        FeedbackGenerationContext genCtx = new FeedbackGenerationContext(
                 interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId),
                 session.getInterviewType(),
                 planTier
         );
+        return new FeedbackContext(genCtx, session.getFeedbackStatus());
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void saveFeedbackAndComplete(UUID sessionId, InterviewFeedbackResult result, String serializedExperts) {
+    public FeedbackStatus saveFeedbackAndComplete(UUID sessionId, InterviewFeedbackResult result, String serializedExperts) {
         InterviewSession session = interviewSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
 
@@ -61,11 +64,16 @@ public class FeedbackTransactionHelper {
         ));
 
         session.complete();
+        return session.getFeedbackStatus();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markFailed(UUID sessionId, String reason) {
-        interviewSessionRepository.findById(sessionId)
-                .ifPresent(session -> session.markFeedbackFailed(reason));
+    public FeedbackStatus markFailed(UUID sessionId, String reason) {
+        return interviewSessionRepository.findById(sessionId)
+                .map(session -> {
+                    session.markFeedbackFailed(reason);
+                    return session.getFeedbackStatus();
+                })
+                .orElse(FeedbackStatus.FAILED);
     }
 }

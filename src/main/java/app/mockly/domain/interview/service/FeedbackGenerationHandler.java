@@ -1,6 +1,7 @@
 package app.mockly.domain.interview.service;
 
 import app.mockly.domain.interview.dto.FeedbackContext;
+import app.mockly.domain.interview.dto.FeedbackGenerationContext;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.event.FeedbackRequestedEvent;
@@ -35,26 +36,26 @@ public class FeedbackGenerationHandler {
         try {
             // TX2: GENERATING 설정 + AI 호출에 필요한 데이터 로딩
             FeedbackContext ctx = txHelper.markGeneratingAndLoadContext(sessionId, userId);
-            feedbackSseManager.send(sessionId, FeedbackStatus.GENERATING);
+            feedbackSseManager.send(sessionId, ctx.feedbackStatus());
 
             // NO TX: AI 호출 (재시도 포함)
-            InterviewFeedbackResult result = callAiWithRetry(sessionId, ctx);
+            InterviewFeedbackResult result = callAiWithRetry(sessionId, ctx.context());
             String serializedExperts = serializeExperts(result);
 
             // TX3-success: 피드백 저장 + 세션 완료
-            txHelper.saveFeedbackAndComplete(sessionId, result, serializedExperts);
-            feedbackSseManager.send(sessionId, FeedbackStatus.COMPLETED);
+            FeedbackStatus completedStatus = txHelper.saveFeedbackAndComplete(sessionId, result, serializedExperts);
+            feedbackSseManager.send(sessionId, completedStatus);
             feedbackSseManager.complete(sessionId);
-
         } catch (Exception e) {
             log.error("피드백 생성 실패 sessionId={}", sessionId, e);
+            FeedbackStatus failedStatus = FeedbackStatus.FAILED;
             try {
                 // TX3-fail: 실패 마킹
-                txHelper.markFailed(sessionId, e.getMessage());
+                failedStatus = txHelper.markFailed(sessionId, e.getMessage());
             } catch (Exception inner) {
                 log.error("피드백 실패 마킹 중 오류 sessionId={}", sessionId, inner);
             }
-            feedbackSseManager.send(sessionId, FeedbackStatus.FAILED, "피드백 생성에 실패했습니다.");
+            feedbackSseManager.send(sessionId, failedStatus, "피드백 생성에 실패했습니다.");
             feedbackSseManager.complete(sessionId);
 
             if (e.getCause() instanceof InterruptedException) {
@@ -63,7 +64,7 @@ public class FeedbackGenerationHandler {
         }
     }
 
-    private InterviewFeedbackResult callAiWithRetry(UUID sessionId, FeedbackContext ctx) {
+    private InterviewFeedbackResult callAiWithRetry(UUID sessionId, FeedbackGenerationContext ctx) {
         Exception lastException = null;
         for (int attempt = 0; attempt < MAX_RETRY; attempt++) {
             try {
