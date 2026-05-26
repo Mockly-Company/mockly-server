@@ -150,6 +150,15 @@ public class InterviewController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @PostMapping("/{sessionId}/feedback/retry")
+    public ResponseEntity<ApiResponse<GetFeedbackResponse>> retryFeedback(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        GetFeedbackResponse response = interviewService.retryFeedback(userId, sessionId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(response));
+    }
+
     @PatchMapping("/{sessionId}/abandon")
     public ResponseEntity<ApiResponse<Void>> abandonSession(
             @AuthenticationPrincipal UUID userId,

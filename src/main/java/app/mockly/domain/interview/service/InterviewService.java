@@ -218,6 +218,24 @@ public class InterviewService {
         return GetFeedbackResponse.completed(feedback);
     }
 
+    @Transactional
+    public GetFeedbackResponse retryFeedback(UUID userId, UUID sessionId) {
+        // Assumption: no existing findSessionOrThrow helper was present; using the same ownership lookup pattern as existing methods.
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+
+        if (session.getFeedbackStatus() != FeedbackStatus.FAILED) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "실패한 피드백만 재시도할 수 있습니다.");
+        }
+        if (session.getStatus() != InterviewSessionStatus.FEEDBACK_PENDING) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "피드백 대기 상태인 세션만 재시도할 수 있습니다.");
+        }
+
+        session.resetFeedbackStatus();
+        eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+        return GetFeedbackResponse.pending();
+    }
+
     @Transactional(readOnly = true)
     public FeedbackStatusInfo getFeedbackStatusInfo(UUID userId, UUID sessionId) {
         InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)

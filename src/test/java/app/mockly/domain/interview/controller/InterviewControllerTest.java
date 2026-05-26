@@ -9,6 +9,7 @@ import app.mockly.domain.interview.controller.docs.AbandonSessionDocs;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
 import app.mockly.domain.interview.controller.docs.FeedbackDocs;
 import app.mockly.domain.interview.controller.docs.QuotaDocs;
+import app.mockly.domain.interview.controller.docs.RetryFeedbackDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
 import app.mockly.domain.interview.controller.docs.SessionListDocs;
 import app.mockly.domain.interview.controller.docs.StreamQuestionDocs;
@@ -484,6 +485,53 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
                 .andDo(document("interview-get-feedback-not-found",
                         resource(FeedbackDocs.notFound())
+                ));
+    }
+
+    @Test
+    @DisplayName("POST /api/interviews/:sessionId/feedback/retry - 성공: 실패한 피드백 재시도")
+    void retryFeedback_success() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.FEEDBACK_PENDING, FeedbackStatus.FAILED);
+
+        mockMvc.perform(post("/api/interviews/{sessionId}/feedback/retry", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.feedbackStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.feedback").doesNotExist())
+                .andDo(document("interview-retry-feedback",
+                        resource(RetryFeedbackDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("POST /api/interviews/:sessionId/feedback/retry - 실패: 실패 상태가 아닌 피드백 (400)")
+    void retryFeedback_notFailed() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.FEEDBACK_PENDING, FeedbackStatus.PENDING);
+
+        mockMvc.perform(post("/api/interviews/{sessionId}/feedback/retry", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andDo(document("interview-retry-feedback-invalid-status",
+                        resource(RetryFeedbackDocs.invalidStatus())
+                ));
+    }
+
+    @Test
+    @DisplayName("POST /api/interviews/:sessionId/feedback/retry - 실패: 세션 없음 (404)")
+    void retryFeedback_sessionNotFound() throws Exception {
+        mockMvc.perform(post("/api/interviews/{sessionId}/feedback/retry", java.util.UUID.randomUUID())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andDo(document("interview-retry-feedback-not-found",
+                        resource(RetryFeedbackDocs.notFound())
                 ));
     }
 

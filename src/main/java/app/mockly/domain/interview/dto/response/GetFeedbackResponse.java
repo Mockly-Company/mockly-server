@@ -11,6 +11,10 @@ public record GetFeedbackResponse(
         return new GetFeedbackResponse(FeedbackStatus.COMPLETED, feedback, null);
     }
 
+    public static GetFeedbackResponse pending() {
+        return new GetFeedbackResponse(FeedbackStatus.PENDING, null, null);
+    }
+
     public static GetFeedbackResponse generating() {
         return new GetFeedbackResponse(FeedbackStatus.GENERATING, null, null);
     }
