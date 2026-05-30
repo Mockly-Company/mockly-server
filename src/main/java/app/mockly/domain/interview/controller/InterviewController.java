@@ -127,8 +127,8 @@ public class InterviewController {
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID sessionId
     ) {
-        SseEmitter emitter = feedbackSseManager.connect(sessionId, 60_000L);
         FeedbackStatusInfo statusInfo = interviewService.getFeedbackStatusInfo(userId, sessionId);
+        SseEmitter emitter = feedbackSseManager.connect(sessionId, 60_000L);
         FeedbackStatus status = statusInfo.feedbackStatus();
         if (status == FeedbackStatus.COMPLETED || status == FeedbackStatus.FAILED) { // SSE 연결 전 이미 피드백 생성이 끝난 경우
             feedbackSseManager.send(sessionId, status, statusInfo.failReason());

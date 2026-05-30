@@ -30,8 +30,10 @@ import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
+import app.mockly.domain.interview.service.FeedbackSseManager;
 import app.mockly.domain.interview.service.InterviewAiService;
 import app.mockly.domain.product.entity.PlanTier;
+import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,14 +46,20 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
@@ -82,6 +90,9 @@ class InterviewControllerTest {
 
     @MockitoBean
     private InterviewAiService interviewAiService;
+
+    @MockitoBean
+    private FeedbackSseManager feedbackSseManager;
 
     @Autowired
     private UserRepository userRepository;
@@ -486,6 +497,35 @@ class InterviewControllerTest {
                 .andDo(document("interview-get-feedback-not-found",
                         resource(FeedbackDocs.notFound())
                 ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/feedback/events - 실패: 세션 없음이면 SSE 연결을 등록하지 않음")
+    void feedbackEvents_sessionNotFound_doesNotConnectEmitter() throws Exception {
+        assertThatThrownBy(() -> mockMvc.perform(get("/api/interviews/{sessionId}/feedback/events", java.util.UUID.randomUUID())
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .accept(MediaType.TEXT_EVENT_STREAM)))
+                .hasRootCauseInstanceOf(BusinessException.class);
+
+        verify(feedbackSseManager, never()).connect(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/:sessionId/feedback/events - 성공: 완료 상태면 fallback 이벤트 전송 후 종료")
+    void feedbackEvents_completed_sendsFallbackAndCompletes() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
+        SseEmitter emitter = new SseEmitter(60_000L);
+        given(feedbackSseManager.connect(eq(session.getId()), eq(60_000L))).willReturn(emitter);
+
+        mockMvc.perform(get("/api/interviews/{sessionId}/feedback/events", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        verify(feedbackSseManager).connect(session.getId(), 60_000L);
+        verify(feedbackSseManager).send(session.getId(), FeedbackStatus.COMPLETED, null);
+        verify(feedbackSseManager).complete(session.getId());
     }
 
     @Test
