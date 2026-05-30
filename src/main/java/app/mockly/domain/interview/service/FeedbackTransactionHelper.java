@@ -6,6 +6,7 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewSession;
+import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
@@ -20,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -33,10 +36,18 @@ public class FeedbackTransactionHelper {
     private final SubscriptionRepository subscriptionRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FeedbackContext markGeneratingAndLoadContext(UUID sessionId, UUID userId) {
+    public Optional<FeedbackContext> markGeneratingAndLoadContext(UUID sessionId, UUID userId) {
+        int updatedRows = interviewSessionRepository.markFeedbackGeneratingIfPending(
+                sessionId, FeedbackStatus.PENDING, FeedbackStatus.GENERATING, Instant.now());
+        if (updatedRows == 0) {
+            if (!interviewSessionRepository.existsById(sessionId)) {
+                throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND);
+            }
+            return Optional.empty();
+        }
+
         InterviewSession session = interviewSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
-        session.markFeedbackGenerating();
 
         PlanTier planTier = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
                 .map(sub -> sub.getSubscriptionPlan().getProduct().getPlanTier())
@@ -46,25 +57,37 @@ public class FeedbackTransactionHelper {
                 session.getInterviewType(),
                 planTier
         );
-        return new FeedbackContext(genCtx, session.getFeedbackStatus());
+        return Optional.of(new FeedbackContext(genCtx, session.getFeedbackStatus()));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FeedbackStatus saveFeedbackAndComplete(UUID sessionId, InterviewFeedbackResult result, String serializedExperts) {
-        InterviewSession session = interviewSessionRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+    public Optional<FeedbackStatus> saveFeedbackAndComplete(UUID sessionId, InterviewFeedbackResult result, String serializedExperts) {
+        Instant now = Instant.now();
+        int updatedRows = interviewSessionRepository.completeFeedbackIfGenerating(
+                sessionId,
+                FeedbackStatus.GENERATING,
+                FeedbackStatus.COMPLETED,
+                InterviewSessionStatus.COMPLETED,
+                now,
+                now);
+        if (updatedRows == 0) {
+            return Optional.empty();
+        }
 
-        interviewFeedbackRepository.save(InterviewFeedback.create(
-                session,
-                result.overallScore(),
-                serializedExperts,
-                result.strengths(),
-                result.improvements(),
-                result.detailedAnalysis()
-        ));
-
-        session.complete();
-        return session.getFeedbackStatus();
+        try {
+            InterviewSession session = interviewSessionRepository.getReferenceById(sessionId);
+            interviewFeedbackRepository.saveAndFlush(InterviewFeedback.create(
+                    session,
+                    result.overallScore(),
+                    serializedExperts,
+                    result.strengths(),
+                    result.improvements(),
+                    result.detailedAnalysis()
+            ));
+            return Optional.of(FeedbackStatus.COMPLETED);
+        } catch (Exception e) {
+            throw new FeedbackCompletionException("피드백 완료 저장 실패", e);
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -75,5 +98,11 @@ public class FeedbackTransactionHelper {
                     return session.getFeedbackStatus();
                 })
                 .orElse(FeedbackStatus.FAILED);
+    }
+
+    public static class FeedbackCompletionException extends RuntimeException {
+        public FeedbackCompletionException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

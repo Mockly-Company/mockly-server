@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -35,17 +36,28 @@ public class FeedbackGenerationHandler {
 
         try {
             // TX2: GENERATING 설정 + AI 호출에 필요한 데이터 로딩
-            FeedbackContext ctx = txHelper.markGeneratingAndLoadContext(sessionId, userId);
+            Optional<FeedbackContext> feedbackContext = txHelper.markGeneratingAndLoadContext(sessionId, userId);
+            if (feedbackContext.isEmpty()) {
+                log.info("피드백 생성 작업 스킵: 이미 처리 중이거나 완료된 세션 sessionId={}", sessionId);
+                return;
+            }
+            FeedbackContext ctx = feedbackContext.get();
             feedbackSseManager.send(sessionId, ctx.feedbackStatus());
 
             // NO TX: AI 호출 (재시도 포함)
             InterviewFeedbackResult result = callAiWithRetry(sessionId, ctx.context());
-            String serializedExperts = serializeExperts(result);
 
             // TX3-success: 피드백 저장 + 세션 완료
-            FeedbackStatus completedStatus = txHelper.saveFeedbackAndComplete(sessionId, result, serializedExperts);
-            feedbackSseManager.send(sessionId, completedStatus);
+            String serializedExperts = serializeExperts(result);
+            Optional<FeedbackStatus> completedStatus = txHelper.saveFeedbackAndComplete(sessionId, result, serializedExperts);
+            if (completedStatus.isEmpty()) {
+                log.info("피드백 완료 저장 스킵: 이미 완료 처리 중이거나 완료된 세션 sessionId={}", sessionId);
+                return;
+            }
+            feedbackSseManager.send(sessionId, completedStatus.get());
             feedbackSseManager.complete(sessionId);
+        } catch (FeedbackTransactionHelper.FeedbackCompletionException e) {
+            log.error("피드백 완료 저장 실패 sessionId={}", sessionId, e);
         } catch (Exception e) {
             log.error("피드백 생성 실패 sessionId={}", sessionId, e);
             FeedbackStatus failedStatus = FeedbackStatus.FAILED;
@@ -91,7 +103,7 @@ public class FeedbackGenerationHandler {
         try {
             return objectMapper.writeValueAsString(result.expertFeedbacks());
         } catch (Exception e) {
-            throw new RuntimeException("전문가 피드백 직렬화 실패", e);
+            throw new FeedbackTransactionHelper.FeedbackCompletionException("전문가 피드백 직렬화 실패", e);
         }
     }
 }

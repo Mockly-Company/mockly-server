@@ -6,6 +6,7 @@ import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,5 +29,35 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
 
     List<InterviewSession> findByFeedbackStatusInAndUpdatedAtBefore(List<FeedbackStatus> statuses, Instant threshold);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE InterviewSession s
+            SET s.feedbackStatus = :generatingStatus,
+                s.updatedAt = :updatedAt
+            WHERE s.id = :sessionId
+              AND s.feedbackStatus = :pendingStatus
+            """)
+    int markFeedbackGeneratingIfPending(@Param("sessionId") UUID sessionId,
+                                        @Param("pendingStatus") FeedbackStatus pendingStatus,
+                                        @Param("generatingStatus") FeedbackStatus generatingStatus,
+                                        @Param("updatedAt") Instant updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE InterviewSession s
+            SET s.status = :completedSessionStatus,
+                s.feedbackStatus = :completedFeedbackStatus,
+                s.completedAt = :completedAt,
+                s.updatedAt = :updatedAt
+            WHERE s.id = :sessionId
+              AND s.feedbackStatus = :generatingStatus
+            """)
+    int completeFeedbackIfGenerating(@Param("sessionId") UUID sessionId,
+                                     @Param("generatingStatus") FeedbackStatus generatingStatus,
+                                     @Param("completedFeedbackStatus") FeedbackStatus completedFeedbackStatus,
+                                     @Param("completedSessionStatus") InterviewSessionStatus completedSessionStatus,
+                                     @Param("completedAt") Instant completedAt,
+                                     @Param("updatedAt") Instant updatedAt);
 
 }
