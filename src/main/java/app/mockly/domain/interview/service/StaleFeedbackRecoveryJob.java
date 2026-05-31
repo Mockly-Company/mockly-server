@@ -4,6 +4,7 @@ import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.event.FeedbackRequestedEvent;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
+import app.mockly.global.config.InterviewFeedbackProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,15 +20,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StaleFeedbackRecoveryJob {
 
-    private static final int STALE_THRESHOLD_MINUTES = 6;
-
     private final InterviewSessionRepository interviewSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final InterviewFeedbackProperties interviewFeedbackProperties;
 
     @Scheduled(fixedDelay = 30_000)
     @Transactional
     public void recoverStaleFeedbacks() {
-        Instant threshold = Instant.now().minusSeconds(STALE_THRESHOLD_MINUTES * 60L);
+        Instant threshold = Instant.now().minusSeconds(interviewFeedbackProperties.getStaleThresholdMinutes() * 60L);
         List<InterviewSession> staleSessions = interviewSessionRepository
                 .findByFeedbackStatusInAndUpdatedAtBefore(
                         List.of(FeedbackStatus.PENDING, FeedbackStatus.GENERATING), threshold);

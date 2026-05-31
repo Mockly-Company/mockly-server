@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -175,5 +176,57 @@ class FeedbackGenerationHandlerTest {
         verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.COMPLETED), anyString());
         verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.FAILED), anyString());
         verify(feedbackSseManager).complete(sessionId);
+    }
+
+    @Test
+    @DisplayName("retry backoff 중 인터럽트가 발생하면 실패 마킹과 SSE 없이 중단한다")
+    void handle_interruptedDuringRetryBackoff_doesNotMarkFailed() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        FeedbackGenerationContext generationContext = new FeedbackGenerationContext(
+                List.of(), InterviewType.TECHNICAL, PlanTier.FREE);
+        FeedbackContext feedbackContext = new FeedbackContext(generationContext, FeedbackStatus.GENERATING);
+
+        given(txHelper.markGeneratingAndLoadContext(sessionId, userId)).willReturn(Optional.of(feedbackContext));
+        given(interviewAiService.generateFeedback(List.of(), InterviewType.TECHNICAL, PlanTier.FREE))
+                .willThrow(new RuntimeException("temporary ai error"));
+
+        try {
+            Thread.currentThread().interrupt();
+
+            handler.handle(new FeedbackRequestedEvent(sessionId, userId));
+
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(txHelper, never()).markFailed(any(), anyString());
+            verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.FAILED), anyString());
+            verify(feedbackSseManager, never()).complete(sessionId);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("AI 예외 cause chain에 인터럽트가 있으면 실패 마킹과 SSE 없이 중단한다")
+    void handle_interruptedCause_doesNotMarkFailed() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        FeedbackGenerationContext generationContext = new FeedbackGenerationContext(
+                List.of(), InterviewType.TECHNICAL, PlanTier.FREE);
+        FeedbackContext feedbackContext = new FeedbackContext(generationContext, FeedbackStatus.GENERATING);
+
+        given(txHelper.markGeneratingAndLoadContext(sessionId, userId)).willReturn(Optional.of(feedbackContext));
+        given(interviewAiService.generateFeedback(List.of(), InterviewType.TECHNICAL, PlanTier.FREE))
+                .willThrow(new RuntimeException("wrapped", new RuntimeException(new InterruptedException())));
+
+        try {
+            handler.handle(new FeedbackRequestedEvent(sessionId, userId));
+
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(txHelper, never()).markFailed(any(), anyString());
+            verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.FAILED), anyString());
+            verify(feedbackSseManager, never()).complete(sessionId);
+        } finally {
+            Thread.interrupted();
+        }
     }
 }

@@ -58,6 +58,9 @@ public class FeedbackGenerationHandler {
             feedbackSseManager.complete(sessionId);
         } catch (FeedbackTransactionHelper.FeedbackCompletionException e) {
             log.error("피드백 완료 저장 실패 sessionId={}", sessionId, e);
+        } catch (FeedbackInterruptedException e) {
+            log.warn("피드백 생성 작업 인터럽트 sessionId={}", sessionId, e);
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("피드백 생성 실패 sessionId={}", sessionId, e);
             FeedbackStatus failedStatus = FeedbackStatus.FAILED;
@@ -89,6 +92,10 @@ public class FeedbackGenerationHandler {
                 return interviewAiService.generateFeedback(
                         ctx.history(), ctx.interviewType(), ctx.planTier());
             } catch (Exception e) {
+                if (hasInterruptedCause(e)) {
+                    Thread.currentThread().interrupt();
+                    throw new FeedbackInterruptedException("피드백 생성 중 인터럽트 발생", e);
+                }
                 lastException = e;
                 log.warn("AI 피드백 생성 실패 sessionId={} (attempt={}/{}): {}",
                         sessionId, attempt + 1, MAX_RETRY, e.getMessage());
@@ -97,7 +104,7 @@ public class FeedbackGenerationHandler {
                         Thread.sleep(1000L * (1L << attempt)); // 1s → 2s
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        throw new RuntimeException("피드백 생성 중 인터럽트 발생", ie);
+                        throw new FeedbackInterruptedException("피드백 생성 중 인터럽트 발생", ie);
                     }
                 }
             }
@@ -110,6 +117,23 @@ public class FeedbackGenerationHandler {
             return objectMapper.writeValueAsString(result.expertFeedbacks());
         } catch (Exception e) {
             throw new FeedbackTransactionHelper.FeedbackCompletionException("전문가 피드백 직렬화 실패", e);
+        }
+    }
+
+    private boolean hasInterruptedCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static class FeedbackInterruptedException extends RuntimeException {
+        private FeedbackInterruptedException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 }
