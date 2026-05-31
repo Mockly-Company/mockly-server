@@ -154,4 +154,26 @@ class FeedbackGenerationHandlerTest {
         verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.FAILED), anyString());
         verify(feedbackSseManager, never()).complete(sessionId);
     }
+
+    @Test
+    @DisplayName("AI 실패 처리 중 이미 완료된 세션이면 실패 메시지 없이 완료 상태만 전송한다")
+    void handle_aiFailureButAlreadyCompleted_sendsCompletedWithoutFailureMessage() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        FeedbackGenerationContext generationContext = new FeedbackGenerationContext(
+                List.of(), InterviewType.TECHNICAL, PlanTier.FREE);
+        FeedbackContext feedbackContext = new FeedbackContext(generationContext, FeedbackStatus.GENERATING);
+
+        given(txHelper.markGeneratingAndLoadContext(sessionId, userId)).willReturn(Optional.of(feedbackContext));
+        given(interviewAiService.generateFeedback(List.of(), InterviewType.TECHNICAL, PlanTier.FREE))
+                .willThrow(new RuntimeException("ai error"));
+        given(txHelper.markFailed(eq(sessionId), anyString())).willReturn(FeedbackStatus.COMPLETED);
+
+        handler.handle(new FeedbackRequestedEvent(sessionId, userId));
+
+        verify(feedbackSseManager).send(sessionId, FeedbackStatus.COMPLETED);
+        verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.COMPLETED), anyString());
+        verify(feedbackSseManager, never()).send(eq(sessionId), eq(FeedbackStatus.FAILED), anyString());
+        verify(feedbackSseManager).complete(sessionId);
+    }
 }

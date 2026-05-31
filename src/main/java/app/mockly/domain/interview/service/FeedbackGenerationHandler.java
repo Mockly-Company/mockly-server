@@ -67,6 +67,12 @@ public class FeedbackGenerationHandler {
             } catch (Exception inner) {
                 log.error("피드백 실패 마킹 중 오류 sessionId={}", sessionId, inner);
             }
+            if (failedStatus == FeedbackStatus.COMPLETED) {
+                log.info("피드백 생성 실패 처리 스킵: 이미 완료된 세션 sessionId={}", sessionId);
+                feedbackSseManager.send(sessionId, failedStatus);
+                feedbackSseManager.complete(sessionId);
+                return;
+            }
             feedbackSseManager.send(sessionId, failedStatus, "피드백 생성에 실패했습니다.");
             feedbackSseManager.complete(sessionId);
 
