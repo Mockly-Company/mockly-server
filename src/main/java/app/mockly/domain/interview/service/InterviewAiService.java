@@ -8,15 +8,20 @@ import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.ApiStatusCode;
+import app.mockly.global.config.InterviewAiProperties;
 import app.mockly.global.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.AdvisorParams;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -24,133 +29,53 @@ public class InterviewAiService {
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+    private final InterviewAiProperties interviewAiProperties;
+    private final MeterRegistry meterRegistry;
 
-    public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper) {
+    public InterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper,
+                              InterviewAiProperties interviewAiProperties, MeterRegistry meterRegistry) {
         this.chatClient = chatClientBuilder.build();
         this.objectMapper = objectMapper;
+        this.interviewAiProperties = interviewAiProperties;
+        this.meterRegistry = meterRegistry;
     }
 
     public Flux<String> generateFirstQuestion(InterviewSession session) {
         String position = session.getPosition();
         ExperienceLevel experienceLevel = session.getExperienceLevel();
         InterviewType interviewType = session.getInterviewType();
-        String selfIntroduction = session.getSelfIntroduction();
+        String keyword = session.getFirstQuestionKeyword();
         String systemPrompt = """
-                당신은 실제 기업에서 면접을 진행하는 숙련된 시니어 면접관입니다.
-
-                당신의 역할은 지원자의 "지식 수준"이 아니라,
-                "이해도, 사고 과정, 그리고 실무 적용 가능성"을 드러내는
-                첫 질문을 설계하는 것입니다.
+                당신은 기업 면접관입니다.
+                키워드 [%s]를 바탕으로 면접 첫 질문을 생성하세요.
+                출력: 면접관이 실제로 말로 읽을 수 있는 한 문장 질문
 
                 ---
-                [입력 정보]
-                - 지원 직무 (position)
-                - 경력 수준 (experienceLevel: JUNIOR / MID / SENIOR)
-                - 자기소개 (selfIntroduction 500자)
+                [질문 유형]
+                다음 6가지 유형 중 키워드와 경력 수준에 가장 적합한 하나를 선택하세요.
+                예시 문장을 그대로 사용하지 마세요.
+
+                1. 개념 확인형: 특정 기술이나 개념의 정의, 특징, 종류를 묻는다
+                   예시 스타일: "~이란 무엇인가요?"
+                2. 경험 회상형: 실제 경험과 그 과정, 결과를 묻는다
+                   예시 스타일: "~를 경험한 적이 있나요?"
+                3. 문제 해결형: 특정 문제를 어떻게 해결했는지 묻는다
+                   예시 스타일: "~ 상황을 어떻게 해결하셨나요?"
+                4. 설계형: 시스템 또는 구조 설계를 묻는다
+                   예시 스타일: "~를 어떻게 구성하셨나요?"
+                5. 트레이드오프형: 선택과 판단 기준을 묻는다
+                   예시 스타일: "A와 B 중 무엇을 선택하시겠습니까?"
+                6. 디버깅형: 문제 원인 분석과 탐색 과정을 묻는다
+                   예시 스타일: "문제를 어떤 순서로 파악하셨나요?"
 
                 ---
-                [핵심 목표]
-                좋은 첫 질문은 다음 조건을 만족해야 합니다:
-
-                1. 지원자가 실제로 답변할 수 있는 질문이어야 한다 (허황된 가정 금지)
-                2. 단순 암기 확인이 아니라 "이해 여부"가 드러나야 한다
-                3. 너무 포괄적이지 않고, 답변 범위가 적절히 제한되어 있어야 한다
-                4. 이후 꼬리 질문이 자연스럽게 이어질 수 있어야 한다
-
-                ---
-                [키워드 선택 전략 - 매우 중요]
-
-                1. 자기소개에서 기술/도메인 키워드 후보 3개를 추출한다.
-                   - 서로 다른 성격의 키워드를 선택할 것
-                     (예: 기술, 성능, 문제 해결 경험 등)
-
-                2. 각 키워드에 대해 아래 기준으로 평가한다:
-                   - 질문으로 만들었을 때 구체적인 답변이 가능한가?
-                   - 하나의 평가 포인트로 명확히 검증 가능한가?
-                   - 지원자의 경험 또는 이해도를 드러낼 수 있는가?
-
-                3. 위 기준을 가장 잘 만족하는 키워드 1개를 선택한다.
-
-                4. 선택한 키워드에 대해 A 또는 B 방식 중 더 적절한 방식으로 질문을 생성한다.
-
-                ---
-                [질문 생성 전략]
-                선택한 키워드 바탕으로 아래 두 가지 방식 중 하나로 질문을 생성한다:
-
-                [A. 개념 확인 질문] (기본)
-                - 해당 기술의 핵심 개념을 정확히 이해했는지 확인
-                - 정의 + 구조 + 동작 원리를 설명할 수 있는 질문
-
-                예:
-                - "트랜잭션이란 무엇인가요?"
-                - "영속성 컨텍스트가 어떤 역할을 하는지 설명해주실 수 있나요?"
-                - "Redis를 캐시로 사용할 때 어떤 자료구조를 사용하셨나요?"
-
-                [B. 제한된 상황 질문] (경력자 또는 경험이 드러난 경우)
-                - 실제 경험을 기반으로 판단/설계를 요구
-                - 단, 상황은 단순하고 명확해야 한다 (복잡한 시나리오 금지)
-
-                예:
-                - "트랜잭션을 사용하면서 롤백이 예상과 다르게 동작했던 경험이 있으신가요?"
-                - "JPA 사용 시 성능 문제가 발생했을 때 어떻게 접근하셨나요?"
-
-                ---
-                [경력 수준별 기준]
-
-                - JUNIOR:
-                  개념 이해 중심 (A 우선)
-                  → 정의 + 기본 동작 설명 가능한 질문
-                - MID:
-                  개념 + 경험 연결 (A 또는 B)
-                  → 실제 사용 경험이나 선택 이유
-                - SENIOR:
-                  설계 판단 중심 (B 우선)
-                  → trade-off, 설계 이유, 의사결정
-
-                ---
-                [출력 규칙]
-                - 반드시 질문 1문장만 생성한다.
-                - 인삿말 금지
-                - 불필요한 설명 금지
-                - "면접관:" 같은 접두사 금지
-                - "~도", "그리고" 등으로 질문을 이어붙이지 말 것
-                - 줄바꿈(\\n)을 사용하지 말고, 모든 내용을 한 줄로 출력할 것
-
-                ---
-                [금지 사항]
-                - 너무 추상적인 질문 (예: "시스템 설계 시 중요한 것은 무엇인가요?")
-                - 여러 개를 동시에 묻는 질문
-                - 답변 범위가 지나치게 넓은 질문
-                - 이론만 요구하거나, 경험만 강요하는 질문
-
-                ---
-                [강제 규칙]
-                - 하나의 질문에는 하나의 평가 포인트만 포함해야 한다
-                - "그리고", "~고", "~면서" 형태로 질문을 확장하지 말 것
-                - 개념 + 추가 해석(예: 데이터 일관성, 성능 영향 등)을 동시에 묻지 말 것
-                - 답변 범위가 명확히 떠오르지 않는 질문은 생성하지 말 것
-
-                ---
-                [키워드 선택 금지 규칙]
-                다음과 같은 추상적인 키워드는 선택하지 않는다:
-                - 데이터 일관성
-                - 성능
-                - 안정성
-                - 확장성
-                - 최적화
-
-                이러한 키워드는 반드시 더 구체적인 기술 또는 경험으로 변환해서 질문해야 한다.
-
-                [자기소개 기반성 규칙]
-
-                질문은 반드시 자기소개에 등장한 "구체적인 기술 또는 경험"에 직접 연결되어야 한다.
-
-                - 단순 개념 키워드만으로 질문하지 말 것
-                - 반드시 실제 사용한 기술 (예: JPA, Spring, Redis 등)을 중심으로 질문할 것
-
-
-                이 기준을 모두 만족하는, 가장 적절한 "첫 질문"을 생성하세요.
-                """;
+                [제약]
+                - 질문 소재는 키워드 [%s] 도메인에서 찾으세요. 자기소개에서 읽은 세부 내용을 질문 내용으로 삼지 마세요.
+                - 하나의 행동만 요구하는 질문을 생성하세요
+                  BAD: "Spring Boot와 JPA를 사용해 도메인을 구현한 뒤 조회 성능을 개선하기 위해 어떤 전략을 구성했나요?"
+                  GOOD: "JPA에서 N+1 문제를 어떻게 해결하셨나요?"
+                - 구체적이고 범위가 명확한 질문을 생성하세요
+                """.formatted(keyword, keyword);
 
         String userPrompt = """
                 다음 정보를 바탕으로 첫 번째 면접 질문을 생성하세요.
@@ -158,11 +83,13 @@ public class InterviewAiService {
                 - 포지션: %s
                 - 경력 수준: %s
                 - 면접 유형: %s
-                - 지원자 자기소개:
+                - [참고용] 지원자 자기소개:
                 \"\"\"
                 %s
                 \"\"\"
-                """.formatted(position, experienceLevel.getDescription(), interviewType.getDescription(), selfIntroduction);
+                - 탐색 키워드: %s
+                """.formatted(position, experienceLevel.getDescription(), interviewType.getDescription(),
+                        session.getSelfIntroduction(), keyword);
 
         try {
             return chatClient.prompt()
@@ -276,8 +203,6 @@ public class InterviewAiService {
     public InterviewFeedbackResult generateFeedback(List<InterviewMessage> history, InterviewType interviewType, PlanTier plan) {
         String systemPrompt = """
                 당신은 면접 평가 시스템입니다. 면접이 끝난 후 지원자의 답변을 전문가 관점에서 평가합니다.
-                반드시 지정된 JSON 형식으로만 응답하세요.
-
                 [종합 점수]
                 overallScore는 전체 면접을 종합적으로 평가한 독립 점수입니다 (1~100).
                 전문가 점수의 단순 평균이 아니라, 면접 전반의 역량을 종합 판단하세요.
@@ -300,13 +225,22 @@ public class InterviewAiService {
                 위 면접 내용을 평가하여 피드백을 제공하세요.
                 """.formatted(interviewType.getDescription(), formatHistory(history));
 
+        Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            return chatClient.prompt()
+            InterviewFeedbackResult result = chatClient.prompt()
+                    .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
                     .system(systemPrompt)
                     .user(userPrompt)
                     .call()
                     .entity(InterviewFeedbackResult.class);
+            sample.stop(Timer.builder("ai.feedback.duration")
+                    .tag("status", "success")
+                    .register(meterRegistry));
+            return result;
         } catch (Exception e) {
+            sample.stop(Timer.builder("ai.feedback.duration")
+                    .tag("status", "error")
+                    .register(meterRegistry));
             log.error("AI 피드백 생성 실패", e);
             throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
         }
@@ -373,4 +307,54 @@ public class InterviewAiService {
     }
 
     private record HistoryEntry(String role, String content) {}
+
+    private record KeywordCandidates(
+            @JsonProperty(required = true, value = "keywords") List<String> keywords) {}
+
+    public List<String> extractKeywordCandidates(String selfIntroduction, String position) {
+        String prompt = """
+                1. 자기소개에서 기술/도메인 키워드 후보 7개를 추출한다.
+                   - 서로 다른 성격의 키워드를 선택할 것
+                     (예: 기술, 성능, 문제 해결 경험 등)
+                   - 기술명은 자기소개에 언급된 그대로 추출한다: "Spring Boot", "JPA", "Redis"
+                \s
+                BAD (추출 금지):
+                - "서비스 운영 중 발생한 문제 해결 경험" → 어떤 문제인지 불명확
+                - "이커머스 스타트업에서의 실무 경험" → 맥락 설명일 뿐
+                - "주문 도메인" → 기술도 경험도 아님
+
+                2. 각 키워드에 대해 아래 기준으로 평가한다:
+                   - 질문으로 만들었을 때 구체적인 답변이 가능한가?
+                   - 하나의 평가 포인트로 명확히 검증 가능한가?
+                   - 지원자의 경험 또는 이해도를 드러낼 수 있는가?
+               \s
+                3. 위 기준을 가장 잘 만족하는 키워드 3~5개를 선택한다.
+               \s
+                포지션: %s
+                자기소개: %s
+               \s""".formatted(position, selfIntroduction);
+
+        try {
+            KeywordCandidates result = chatClient.prompt()
+                    .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
+                    .options(OpenAiChatOptions.builder()
+                            .model(interviewAiProperties.getKeywordExtractionModel())
+                            .temperature(interviewAiProperties.getKeywordExtractionTemperature())
+                            .build())
+                    .user(prompt)
+                    .call()
+                    .entity(KeywordCandidates.class);
+            if (result.keywords() == null || result.keywords().isEmpty()) {
+                log.error("키워드 후보 추출 결과가 비어있음");
+                throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
+            }
+            return result.keywords();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("키워드 후보 추출 실패", e);
+            throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
+        }
+    }
+
 }

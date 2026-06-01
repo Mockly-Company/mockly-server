@@ -51,6 +51,16 @@ public class InterviewSession extends BaseEntity {
 
     private Instant completedAt;
 
+    @Column(length = 100)
+    private String firstQuestionKeyword;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private FeedbackStatus feedbackStatus;
+
+    @Column(length = 500)
+    private String failReason;
+
     public static InterviewSession create(User user, String position, ExperienceLevel experienceLevel,
                                           InterviewType interviewType, int totalQuestions, String selfIntroduction) {
         return InterviewSession.builder()
@@ -69,13 +79,38 @@ public class InterviewSession extends BaseEntity {
         this.currentQuestionNumber++;
     }
 
+    public void startFeedbackGeneration() {
+        this.status = InterviewSessionStatus.FEEDBACK_PENDING;
+        this.feedbackStatus = FeedbackStatus.PENDING;
+    }
+
+    public void markFeedbackGenerating() {
+        this.feedbackStatus = FeedbackStatus.GENERATING;
+    }
+
     public void complete() {
         this.status = InterviewSessionStatus.COMPLETED;
+        this.feedbackStatus = FeedbackStatus.COMPLETED;
         this.completedAt = Instant.now();
+    }
+
+    public void markFeedbackFailed(String reason) {
+        if (this.feedbackStatus == FeedbackStatus.COMPLETED) return;
+        this.feedbackStatus = FeedbackStatus.FAILED;
+        this.failReason = reason != null && reason.length() > 500 ? reason.substring(0, 500) : reason;
+    }
+
+    public void resetFeedbackStatus() {
+        this.feedbackStatus = FeedbackStatus.PENDING;
+        this.failReason = null;
     }
 
     public void abandon() {
         this.status = InterviewSessionStatus.ABANDONED;
+    }
+
+    public void setFirstQuestionKeyword(String keyword) {
+        this.firstQuestionKeyword = keyword;
     }
 
     public boolean isAllQuestionsAnswered() {

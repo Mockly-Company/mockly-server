@@ -7,6 +7,9 @@ spring:
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 5000   # 5s — 실시간 API 서버 권장값. pool 고갈 시 빠르게 실패
+      keepalive-time: 120000     # 2분 — NAT/방화벽 idle timeout(AWS 350s)보다 짧게 유지
 
   # JPA 설정
   jpa:
@@ -54,8 +57,26 @@ spring.ai:
     api-key: ${OPENAI_API_KEY}
     chat:
       options:
-        model: gpt-5-mini
+#        model: gpt-4o-mini
+#        temperature: 0.9
+        model: gpt-5.4-nano
         temperature: 1.0
+
+interview:
+  ai:
+    keyword-extraction-model: gpt-4o-mini
+    keyword-extraction-temperature: 0.7
+  feedback:
+    stale-threshold-minutes: ${INTERVIEW_FEEDBACK_STALE_THRESHOLD_MINUTES:6}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  metrics:
+    tags:
+      application: mockly
 
 portone:
   api-secret: ${PORTONE_API_SECRET}

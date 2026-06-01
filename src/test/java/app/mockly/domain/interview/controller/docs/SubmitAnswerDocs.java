@@ -5,7 +5,6 @@ import com.epages.restdocs.apispec.HeaderDescriptorWithType;
 import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.epages.restdocs.apispec.SimpleType;
 import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 
 import java.util.List;
 
@@ -26,30 +25,21 @@ public class SubmitAnswerDocs {
             fieldWithPath("sessionId").description("면접 세션 ID").type(SimpleType.STRING),
             fieldWithPath("currentQuestionNumber").description("현재 질문 번호").type(SimpleType.NUMBER),
             fieldWithPath("totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
-            fieldWithPath("isCompleted").description("면접 완료 여부").type(SimpleType.BOOLEAN),
-            fieldWithPath("feedback").description("피드백 (완료 시)").type(JsonFieldType.OBJECT).optional(),
-            fieldWithPath("feedback.overallScore").description("면접 종합 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks").description("전문가별 평가 목록").type(JsonFieldType.ARRAY).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].expertRole").description("전문가 역할").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].score").description("전문가 평가 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].evaluation").description("전문가 평가 내용").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.strengths").description("전반적인 강점 요약").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.improvements").description("전반적인 개선점 요약").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.detailedAnalysis").description("질문별 상세 분석 (PRO 전용)").type(SimpleType.STRING).optional()
+            fieldWithPath("sessionStatus").description("세션 상태 (IN_PROGRESS | FEEDBACK_PENDING)").type(SimpleType.STRING)
     );
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
                 .tag("Interview")
                 .summary("답변 제출")
-                .description("면접 질문에 대한 답변을 제출합니다. 마지막 답변이면 피드백을 반환합니다. 다음 질문은 GET /{sessionId}/questions/stream SSE 엔드포인트로 수신합니다.")
+                .description("면접 질문에 대한 답변을 제출합니다. 마지막 답변이면 FEEDBACK_PENDING 상태를 반환하고 피드백은 비동기로 생성됩니다. 피드백 완료는 GET /{sessionId}/feedback/events SSE로 수신합니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .requestFields(REQUEST_FIELDS)
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))
                 .build();
     }
 
-    public static ResourceSnippetParameters successCompleted() {
+    public static ResourceSnippetParameters feedbackPending() {
         return ResourceSnippetParameters.builder()
                 .tag("Interview")
                 .requestHeaders(REQUEST_HEADERS)

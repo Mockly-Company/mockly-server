@@ -2,14 +2,11 @@ package app.mockly.domain.interview.service;
 
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
-import app.mockly.domain.interview.dto.InterviewFeedbackResult;
+import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
-import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.FeedbackDto;
-import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
-import app.mockly.domain.interview.dto.response.GetSessionListResponse;
-import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.dto.response.*;
+import app.mockly.domain.interview.event.FeedbackRequestedEvent;
 import app.mockly.domain.interview.entity.*;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
@@ -22,6 +19,8 @@ import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -39,6 +38,7 @@ import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class InterviewService {
@@ -55,9 +55,10 @@ public class InterviewService {
     private final SubscriptionRepository subscriptionRepository;
     private final InterviewAiService interviewAiService;
     private final InterviewQuotaRepository interviewQuotaRepository;
+    private final InterviewSessionWriter interviewSessionWriter;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @Transactional
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
@@ -66,12 +67,13 @@ public class InterviewService {
         validateQuota(userId, plan);
         validateQuestionCount(request.totalQuestions(), plan);
 
-        InterviewSession session = InterviewSession.create(
-                user, request.position(), request.experienceLevel(), request.interviewType(),
-                request.totalQuestions(), request.selfIntroduction());
-        interviewSessionRepository.save(session);
+        List<String> candidates = interviewAiService.extractKeywordCandidates(
+                request.selfIntroduction(), request.position());
+        log.info("keyword candidates: {}", candidates);
+        String keyword = candidates.get(RANDOM.nextInt(candidates.size()));
+        log.info("selected keyword: {}", keyword);
 
-        session.incrementQuestionNumber();
+        InterviewSession session = interviewSessionWriter.saveNewSession(user, request, keyword);
         String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
         return CreateInterviewResponse.from(session, greeting);
     }
@@ -89,43 +91,31 @@ public class InterviewService {
                 InterviewMessage.createUserMessage(session, request.content(), session.getCurrentQuestionNumber()));
 
         if (session.isAllQuestionsAnswered()) {
-            PlanTier plan = getUserPlan(userId);
-            List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-            InterviewFeedbackResult feedbackResult = interviewAiService.generateFeedback(
-                    history, session.getInterviewType(), plan);
-
-            session.complete();
-            interviewFeedbackRepository.save(InterviewFeedback.create(
-                    session,
-                    feedbackResult.overallScore(),
-                    serializeExpertFeedbacks(feedbackResult),
-                    feedbackResult.strengths(),
-                    feedbackResult.improvements(),
-                    feedbackResult.detailedAnalysis()
-            ));
-
-            return SubmitAnswerResponse.completed(session, feedbackResult);
+            session.startFeedbackGeneration();
+            eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+            return SubmitAnswerResponse.feedbackPending(session);
         }
 
         session.incrementQuestionNumber();
         return SubmitAnswerResponse.inProgress(session);
     }
 
-    public Flux<String> prepareQuestion(UUID sessionId, UUID userId) {
+    @Transactional(readOnly = true)
+    public QuestionStream getQuestionStream(UUID sessionId, UUID userId) {
         InterviewSession interviewSession = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
         int questionNumber = interviewSession.getCurrentQuestionNumber();
 
         Optional<InterviewMessage> existing = interviewMessageRepository.findBySessionIdAndQuestionNumberAndRole(sessionId, questionNumber, InterviewMessageRole.INTERVIEWER);
         if (existing.isPresent()) {
-            return Flux.just(existing.get().getContent());
+            return new QuestionStream(questionNumber, Flux.just(existing.get().getContent()));
         }
 
-        if (questionNumber == 1) {
-            return interviewAiService.generateFirstQuestion(interviewSession);
-        }
-        List<InterviewMessage> history = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
-        return interviewAiService.generateNextQuestion(interviewSession, history);
+        Flux<String> flux = questionNumber == 1
+                ? interviewAiService.generateFirstQuestion(interviewSession)
+                : interviewAiService.generateNextQuestion(interviewSession,
+                        interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId));
+        return new QuestionStream(questionNumber, flux);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -157,20 +147,6 @@ public class InterviewService {
         return GetSessionListResponse.from(result);
     }
 
-    public int getCurrentQuestionNumber(UUID sessionId, UUID userId) {
-        return interviewSessionRepository.findByIdAndUserId(sessionId, userId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND))
-                .getCurrentQuestionNumber();
-    }
-
-    private String serializeExpertFeedbacks(InterviewFeedbackResult result) {
-        try {
-            return objectMapper.writeValueAsString(result.expertFeedbacks());
-        } catch (Exception e) {
-            return "[]";
-        }
-    }
-
     // active subscription이 있으면 PlanTier 반환, 없으면 FREE
     private PlanTier getUserPlan(UUID userId) {
         return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
@@ -178,21 +154,24 @@ public class InterviewService {
                 .orElse(PlanTier.FREE);
     }
 
-    private InterviewQuota getQuota(PlanTier plan) {
+    private InterviewQuota getInterviewQuota(PlanTier plan) {
         return interviewQuotaRepository.findById(plan)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "면접 쿼터 설정을 찾을 수 없습니다."));
     }
 
-    // TODO: 추후 KST 기준을 User별 timezone 지원으로 확장
-    private void validateQuota(UUID userId, PlanTier plan) {
-        int limit = getQuota(plan).getDailyLimit();
+    // TODO: timezone 지원 시 TimeUtils 또는 TimeRangeProvider로 이전
+    private record TodayRange(Instant start, Instant end) {}
 
+    private TodayRange getTodayKstRange() {
         ZoneId kst = ZoneId.of("Asia/Seoul");
         ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
-        Instant startInstant = startOfDay.toInstant();
-        Instant endInstant = startOfDay.plusDays(1).toInstant();
+        return new TodayRange(startOfDay.toInstant(), startOfDay.plusDays(1).toInstant());
+    }
 
-        long todayCount = interviewSessionRepository.countTodaySessions(userId, startInstant, endInstant);
+    private void validateQuota(UUID userId, PlanTier plan) {
+        int limit = getInterviewQuota(plan).getDailyLimit();
+        TodayRange range = getTodayKstRange();
+        long todayCount = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
         if (todayCount >= limit) {
             throw new BusinessException(ApiStatusCode.QUOTA_EXCEEDED);
         }
@@ -200,12 +179,80 @@ public class InterviewService {
 
     // preset {3,5,10} 중 플랜의 maxQuestionsPerSession 이하인 값만 허용
     private void validateQuestionCount(int totalQuestions, PlanTier plan) {
-        int max = getQuota(plan).getMaxQuestionsPerSession();
+        int max = getInterviewQuota(plan).getMaxQuestionsPerSession();
         Set<Integer> allowed = Set.of(3, 5, 10).stream()
                 .filter(q -> q <= max)
                 .collect(Collectors.toSet());
         if (!allowed.contains(totalQuestions)) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "현재 플랜에서 선택할 수 없는 질문 개수입니다.");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public GetQuotaResponse getQuota(UUID userId) {
+        PlanTier plan = getUserPlan(userId);
+        InterviewQuota quota = getInterviewQuota(plan);
+        TodayRange range = getTodayKstRange();
+        long usedToday = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
+        return GetQuotaResponse.of(quota.getDailyLimit(), usedToday, quota.getMaxQuestionsPerSession());
+    }
+
+    @Transactional(readOnly = true)
+    public GetFeedbackResponse getFeedback(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+
+        FeedbackStatus feedbackStatus = session.getFeedbackStatus();
+        if (feedbackStatus == null) {
+            throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "아직 피드백이 생성되지 않은 세션입니다.");
+        }
+        if (feedbackStatus == FeedbackStatus.FAILED) {
+            return GetFeedbackResponse.failed(session.getFailReason());
+        }
+        if (feedbackStatus == FeedbackStatus.PENDING || feedbackStatus == FeedbackStatus.GENERATING) {
+            return GetFeedbackResponse.generating();
+        }
+        FeedbackDto feedback = interviewFeedbackRepository.findBySessionId(sessionId)
+                .map(f -> FeedbackDto.from(f, objectMapper))
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "피드백 데이터를 찾을 수 없습니다."));
+        return GetFeedbackResponse.completed(feedback);
+    }
+
+    @Transactional
+    public GetFeedbackResponse retryFeedback(UUID userId, UUID sessionId) {
+        // Assumption: no existing findSessionOrThrow helper was present; using the same ownership lookup pattern as existing methods.
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+
+        if (session.getFeedbackStatus() != FeedbackStatus.FAILED) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "실패한 피드백만 재시도할 수 있습니다.");
+        }
+        if (session.getStatus() != InterviewSessionStatus.FEEDBACK_PENDING) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "피드백 대기 상태인 세션만 재시도할 수 있습니다.");
+        }
+
+        session.resetFeedbackStatus();
+        eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+        return GetFeedbackResponse.pending();
+    }
+
+    @Transactional(readOnly = true)
+    public FeedbackStatusInfo getFeedbackStatusInfo(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        if (session.getFeedbackStatus() == null) {
+            throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "피드백 생성이 시작되지 않은 세션입니다.");
+        }
+        return new FeedbackStatusInfo(session.getFeedbackStatus(), session.getFailReason());
+    }
+
+    @Transactional
+    public void abandonSession(UUID userId, UUID sessionId) {
+        InterviewSession session = interviewSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
+        if (!session.isInProgress()) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "이미 종료된 면접 세션입니다.");
+        }
+        session.abandon();
     }
 }

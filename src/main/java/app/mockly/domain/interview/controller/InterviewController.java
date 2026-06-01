@@ -1,12 +1,12 @@
 package app.mockly.domain.interview.controller;
 
+import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
-import app.mockly.domain.interview.dto.response.CreateInterviewResponse;
-import app.mockly.domain.interview.dto.response.GetSessionDetailResponse;
-import app.mockly.domain.interview.dto.response.GetSessionListResponse;
-import app.mockly.domain.interview.dto.response.SubmitAnswerResponse;
+import app.mockly.domain.interview.dto.response.*;
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
+import app.mockly.domain.interview.service.FeedbackSseManager;
 import app.mockly.domain.interview.service.InterviewService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -30,6 +30,15 @@ import java.util.UUID;
 public class InterviewController {
 
     private final InterviewService interviewService;
+    private final FeedbackSseManager feedbackSseManager;
+
+    @GetMapping("/quota")
+    public ResponseEntity<ApiResponse<GetQuotaResponse>> getQuota(
+            @AuthenticationPrincipal UUID userId
+    ) {
+        GetQuotaResponse response = interviewService.getQuota(userId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<CreateInterviewResponse>> createSession(
@@ -68,9 +77,10 @@ public class InterviewController {
     ) {
         SseEmitter emitter = new SseEmitter(60_000L);
         StringBuilder fullText = new StringBuilder();
-        int questionNumber = interviewService.getCurrentQuestionNumber(sessionId, userId);
+        QuestionStream qs = interviewService.getQuestionStream(sessionId, userId);
+        int questionNumber = qs.questionNumber();
 
-        interviewService.prepareQuestion(sessionId, userId)
+        qs.tokens()
             .subscribe(
                 token -> {
                     fullText.append(token);
@@ -110,5 +120,51 @@ public class InterviewController {
     ) {
         SubmitAnswerResponse response = interviewService.submitAnswer(userId, sessionId, request);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping(value = "/{sessionId}/feedback/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter feedbackEvents(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        FeedbackStatusInfo statusInfo = interviewService.getFeedbackStatusInfo(userId, sessionId);
+        SseEmitter emitter = feedbackSseManager.connect(sessionId, 60_000L);
+        FeedbackStatus status = statusInfo.feedbackStatus();
+        if (status == FeedbackStatus.COMPLETED || status == FeedbackStatus.FAILED) { // SSE 연결 전 이미 피드백 생성이 끝난 경우
+            feedbackSseManager.send(sessionId, status, statusInfo.failReason());
+            feedbackSseManager.complete(sessionId);
+        }
+        return emitter;
+    }
+
+    @GetMapping("/{sessionId}/feedback")
+    public ResponseEntity<ApiResponse<GetFeedbackResponse>> getFeedback(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        GetFeedbackResponse response = interviewService.getFeedback(userId, sessionId);
+        if (response.feedbackStatus() == FeedbackStatus.PENDING
+                || response.feedbackStatus() == FeedbackStatus.GENERATING) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(response));
+        }
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @PostMapping("/{sessionId}/feedback/retry")
+    public ResponseEntity<ApiResponse<GetFeedbackResponse>> retryFeedback(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        GetFeedbackResponse response = interviewService.retryFeedback(userId, sessionId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(response));
+    }
+
+    @PatchMapping("/{sessionId}/abandon")
+    public ResponseEntity<ApiResponse<Void>> abandonSession(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId
+    ) {
+        interviewService.abandonSession(userId, sessionId);
+        return ResponseEntity.ok(ApiResponse.noContent());
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -47,7 +48,7 @@ public class OutboxEvent extends BaseEntity {
 
     public static OutboxEvent scheduleCreate(Long subscriptionId, String billingKey) {
         try {
-            var payloadMap = java.util.Map.of(
+            Map<String, Object> payloadMap = Map.of(
                     "subscriptionId", subscriptionId,
                     "billingKey", billingKey
             );
