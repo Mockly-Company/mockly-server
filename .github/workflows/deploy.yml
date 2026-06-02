@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Run tests
+        run: ./gradlew test
+
+  deploy:
+    name: Deploy to GCP VM
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      # TODO:
+      # - Split dev/prod Spring profiles before hardening production deployment.
+      # - If the VM still runs SPRING_PROFILES_ACTIVE=dev, this workflow preserves that current behavior.
+      # - Review Redis Pub/Sub or another cross-instance SSE delivery strategy before horizontal scaling.
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.GCP_VM_HOST }}
+          username: ${{ secrets.GCP_VM_USER }}
+          key: ${{ secrets.GCP_VM_SSH_KEY }}
+          port: ${{ secrets.GCP_VM_SSH_PORT || 22 }}
+          script_stop: true
+          envs: DEPLOY_APP_DIR,DEPLOY_INFRA_DIR,DEPLOY_COMPOSE_FILE
+          script: |
+            set -euo pipefail
+
+            cd "$DEPLOY_APP_DIR"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            cd "$DEPLOY_INFRA_DIR"
+            docker compose --env-file .env -f "$DEPLOY_COMPOSE_FILE" up --build -d
+            docker image prune -f
+        env:
+          DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
+          DEPLOY_INFRA_DIR: ${{ vars.DEPLOY_INFRA_DIR }}
+          DEPLOY_COMPOSE_FILE: ${{ vars.DEPLOY_COMPOSE_FILE }}
