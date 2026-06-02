@@ -28,6 +28,7 @@ jobs:
     name: Deploy to GCP VM
     runs-on: ubuntu-latest
     needs: test
+    timeout-minutes: 15
     steps:
       # TODO:
       # - Split dev/prod Spring profiles before hardening production deployment.
@@ -41,17 +42,24 @@ jobs:
           key: ${{ secrets.GCP_VM_SSH_KEY }}
           port: ${{ secrets.GCP_VM_SSH_PORT || 22 }}
           script_stop: true
+          timeout: 30s
+          command_timeout: 12m
           envs: DEPLOY_APP_DIR,DEPLOY_INFRA_DIR,DEPLOY_COMPOSE_FILE
           script: |
             set -euo pipefail
+            export GIT_TERMINAL_PROMPT=0
 
+            echo "Pulling latest main in $DEPLOY_APP_DIR"
             cd "$DEPLOY_APP_DIR"
             git fetch origin main
             git checkout main
             git pull --ff-only origin main
 
+            echo "Restarting Docker Compose in $DEPLOY_INFRA_DIR"
             cd "$DEPLOY_INFRA_DIR"
             docker compose --env-file .env -f "$DEPLOY_COMPOSE_FILE" up --build -d
+
+            echo "Pruning dangling Docker images"
             docker image prune -f
         env:
           DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
