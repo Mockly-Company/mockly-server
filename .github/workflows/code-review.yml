@@ -1,0 +1,63 @@
+name: Codex 코드 리뷰 트리거
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  trigger-codex-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: base 브랜치에서 가이드라인만 체크아웃
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}   # PR head가 아닌 base 기준
+          fetch-depth: 1
+          sparse-checkout: |
+            .claude/commands/review-backend.md
+          sparse-checkout-cone-mode: false
+
+      - name: 리뷰 가이드라인 읽기
+        id: guideline
+        run: |
+          {
+            echo 'body<<GUIDELINE_EOF'
+            cat .claude/commands/review-backend.md
+            echo
+            echo 'GUIDELINE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: '@codex review 코멘트 작성'
+        uses: actions/github-script@v8
+        env:
+          GUIDELINE: ${{ steps.guideline.outputs.body }}
+        with:
+          github-token: ${{ secrets.CODEX_REVIEW_TOKEN }}
+          script: |
+            const guideline = process.env.GUIDELINE;
+            const body = [
+              '@codex review',
+              '',
+              '아래 가이드라인에 따라 한국어로 리뷰해주세요. 결과는 🚨 필수 수정 / ⚠️ 권장 수정 / ✅ 좋은 점으로 분류하고, 변경된 파일 경로와 줄 번호를 명시해주세요.',
+              '',
+              '---',
+              '',
+              guideline,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
