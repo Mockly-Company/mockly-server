@@ -153,15 +153,9 @@ public class SubscriptionService {
 
         // 결제 스케줄 취소
         if (subscription.getCurrentPaymentScheduleId() != null) {
-            try {
-                portOneService.revokePaymentSchedule(subscription.getCurrentPaymentScheduleId());
-                log.info("결제 스케줄 취소 완료 - subscriptionId: {}, scheduleId: {}",
-                        subscriptionId, subscription.getCurrentPaymentScheduleId());
-            } catch (Exception e) {
-                log.error("결제 스케줄 취소 실패 - subscriptionId: {}, scheduleId: {}",
-                        subscriptionId, subscription.getCurrentPaymentScheduleId(), e);
-                // 실패해도 구독은 취소 처리 (스케줄은 수동 정리 필요)
-            }
+            portOneService.revokePaymentSchedule(subscription.getCurrentPaymentScheduleId());
+            log.info("결제 스케줄 취소 완료 - subscriptionId: {}, scheduleId: {}",
+                    subscriptionId, subscription.getCurrentPaymentScheduleId());
         }
 
         subscription.cancel();
