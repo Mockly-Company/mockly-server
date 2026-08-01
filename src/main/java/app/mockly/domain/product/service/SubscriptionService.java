@@ -213,8 +213,8 @@ public class SubscriptionService {
         );
         String scheduleId = paymentScheduleService.createSchedule(subscription, billingKey, nextPeriodStart, nextPeriodEnd);
 
-        log.info("구독 갱신 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
-                subscription.getId(), scheduleId, billingKey, subscription.getCurrentPeriodStart(), subscription.getCurrentPeriodEnd(), nextPeriodStart);
+        log.info("구독 갱신 완료 - subscriptionId: {}, scheduleId: {}, 현재 기간: {} ~ {}, 다음 결제일: {}",
+                subscription.getId(), scheduleId, subscription.getCurrentPeriodStart(), subscription.getCurrentPeriodEnd(), nextPeriodStart);
     }
 
     private Subscription validateAndGetSubscription(UUID userId, Long subscriptionId) {
