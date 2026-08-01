@@ -1,6 +1,7 @@
 package app.mockly.domain.product.service;
 
 import app.mockly.domain.payment.client.PortOneService;
+import app.mockly.domain.payment.dto.outbox.CreateSchedulePayload;
 import app.mockly.domain.payment.entity.*;
 import app.mockly.domain.payment.repository.InvoiceRepository;
 import app.mockly.domain.payment.repository.OutboxEventRepository;
@@ -15,6 +16,8 @@ import app.mockly.domain.product.repository.SubscriptionPlanRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.portone.sdk.server.common.PaymentAmountInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +42,7 @@ public class SubscriptionService {
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public CreateSubscriptionResponse createSubscription(UUID userId, CreateSubscriptionRequest request) {
@@ -99,7 +103,8 @@ public class SubscriptionService {
         Payment payment = Payment.create(invoice, subscriptionPlan.getPrice(), subscriptionPlan.getCurrency());
         paymentRepository.save(payment);
 
-        outboxEventRepository.save(OutboxEvent.scheduleCreate(subscription.getId(), billingKey));
+        CreateSchedulePayload outboxPayload = new CreateSchedulePayload(paymentMethodId);
+        outboxEventRepository.save(OutboxEvent.createSchedule(subscription.getId(), serializeOutboxPayload(outboxPayload)));
 
         // 결제 요청
         try {
@@ -193,36 +198,8 @@ public class SubscriptionService {
         );
         String scheduleId = paymentScheduleService.createSchedule(subscription, billingKey, nextPeriodStart, nextPeriodEnd);
 
-        log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 다음 결제일: {}",
-                subscription.getId(), scheduleId, billingKey, nextPeriodStart);
-    }
-
-    @Transactional
-    public void processScheduleCreation(Long subscriptionId) {
-        OutboxEvent event = outboxEventRepository.findByAggregateIdAndEventTypeAndStatus(subscriptionId, "SCHEDULE_CREATE", OutboxEventStatus.PENDING)
-                .orElse(null);
-        if (event == null) return;
-
-        Subscription subscription = subscriptionRepository.findById(subscriptionId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
-        // 이미 스케줄이 생성되어 있는 경우, 중복 방지 (ex. 기본 결제 수단 변경)
-        if (subscription.getCurrentPaymentScheduleId() != null) {
-            event.markAsProcessed();
-            return;
-        }
-
-        String billingKey = event.extractBillingKey();
-
-        try {
-            createFirstPaymentSchedule(subscription, billingKey);
-            event.markAsProcessed();
-        } catch (BusinessException e) {
-            if (e.getStatusCode() == ApiStatusCode.DUPLICATE_RESOURCE) {
-                log.warn("PortOne에 스케줄 존재하나 DB에 scheduleId 없음 - subscriptionId: {}", subscriptionId);
-                event.markAsFailed("PAYMENT_SCHEDULE_ALREADY_EXISTS - 수동 확인 필요");
-            }
-            throw e;
-        }
+        log.info("첫 결제 스케줄 생성 완료 - subscriptionId: {}, scheduleId: {}, 다음 결제일: {}",
+                subscription.getId(), scheduleId, nextPeriodStart);
     }
 
     @Transactional
@@ -283,4 +260,13 @@ public class SubscriptionService {
             case LIFETIME -> null;
         };
     }
+
+    private String serializeOutboxPayload(CreateSchedulePayload payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Outbox payload 직렬화 실패", e);
+        }
+    }
+
 }
