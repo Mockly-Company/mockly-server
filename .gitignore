@@ -37,6 +37,11 @@ out/
 .vscode/
 
 .env
+.env.preprod
+.env.preprod.*
+!.env.preprod.example
 application*.yaml
+!src/main/resources/application-preprod.yaml
+.codex/
 *:Zone.Identifier
 .mcp.json
