@@ -1,0 +1,49 @@
+services:
+  mockly-server-preprod:
+    image: mockly-server-preprod:${APP_IMAGE_TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: mockly-server-preprod
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.75
+    environment:
+      SPRING_PROFILES_ACTIVE: preprod
+      POSTGRES_HOST: mockly-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: mockly-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-1}
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_ANDROID_CLIENT_ID: ${GOOGLE_ANDROID_CLIENT_ID}
+      PORTONE_API_SECRET: ${PORTONE_API_SECRET}
+      PORTONE_STORE_ID: ${PORTONE_STORE_ID}
+      PORTONE_CHANNEL_KEY: ${PORTONE_CHANNEL_KEY}
+      PORTONE_WEBHOOK_SECRET: ${PORTONE_WEBHOOK_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      INTERVIEW_FEEDBACK_STALE_THRESHOLD_MINUTES: ${INTERVIEW_FEEDBACK_STALE_THRESHOLD_MINUTES:-6}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mockly-infra_mockly-network"
+      - "traefik.http.routers.mockly-preprod.rule=Host(`pre-prod.kancho.co`)"
+      - "traefik.http.routers.mockly-preprod.entrypoints=websecure"
+      - "traefik.http.routers.mockly-preprod.tls=true"
+      - "traefik.http.services.mockly-preprod.loadbalancer.server.port=8080"
+    networks:
+      - mockly-network
+
+networks:
+  mockly-network:
+    external: true
+    name: mockly-infra_mockly-network
