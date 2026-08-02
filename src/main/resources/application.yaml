@@ -26,6 +26,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
 
 #  # H2 콘솔 활성화 (개발 편의성)
 #  h2:
