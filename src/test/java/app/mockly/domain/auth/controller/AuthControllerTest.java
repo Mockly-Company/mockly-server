@@ -3,6 +3,7 @@ package app.mockly.domain.auth.controller;
 import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.LocationInfo;
+import app.mockly.domain.auth.dto.Platform;
 import app.mockly.domain.auth.dto.request.AuthorizationCodeRequest;
 import app.mockly.domain.auth.dto.request.LogoutRequest;
 import app.mockly.domain.auth.dto.request.RefreshTokenRequest;
@@ -21,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.restdocs.AutoConfigureRestDocs;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -38,9 +40,12 @@ import app.mockly.domain.auth.controller.docs.LoginWithGoogleCodeDocs;
 import app.mockly.domain.auth.controller.docs.LogoutDocs;
 import app.mockly.domain.auth.controller.docs.RefreshTokenDocs;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -126,7 +131,7 @@ class AuthControllerTest {
             true
         );
 
-        given(googleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString()))
+        given(googleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString(), any()))
                 .willReturn("mock-id-token");
         given(googleOAuthService.verifyIdToken(anyString()))
                 .willReturn(mockGoogleUser);
@@ -136,7 +141,8 @@ class AuthControllerTest {
             "test-code-verifier",
             "https://mockly.app/oauth2/google/redirect",
                 new DeviceInfo("uuid-from-client", "device-name"),
-                new LocationInfo(127.0, 135.0)
+                new LocationInfo(127.0, 135.0),
+                Platform.ANDROID
         );
 
         // when & then
@@ -153,6 +159,46 @@ class AuthControllerTest {
                 .andDo(document("auth-login-google-code",
                         resource(LoginWithGoogleCodeDocs.success())
                 ));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login/google/code - platform 미전송 시 ANDROID, 전송 시 해당 플랫폼 client id로 교환")
+    void loginWithGoogleCode_ResolvesPlatform() throws Exception {
+        given(googleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString(), any()))
+                .willReturn("mock-id-token");
+        given(googleOAuthService.verifyIdToken(anyString()))
+                .willReturn(new GoogleUser("google-user-id-456", "ios@mockly.com", "iOS User", true));
+
+        // platform 필드가 아예 없는 기존 Android 클라이언트 요청
+        mockMvc.perform(post("/api/auth/login/google/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "test-auth-code",
+                                  "codeVerifier": "test-code-verifier",
+                                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
+                                  "deviceInfo": {"deviceId": "no-platform-device", "deviceName": "device-name"}
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/auth/login/google/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "test-auth-code",
+                                  "codeVerifier": "test-code-verifier",
+                                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
+                                  "deviceInfo": {"deviceId": "ios-device", "deviceName": "iPhone"},
+                                  "platform": "IOS"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Platform> platformCaptor = ArgumentCaptor.forClass(Platform.class);
+        verify(googleOAuthService, times(2))
+                .exchangeAuthorizationCode(anyString(), anyString(), anyString(), platformCaptor.capture());
+        assertThat(platformCaptor.getAllValues()).containsExactly(Platform.ANDROID, Platform.IOS);
     }
 
     @Test

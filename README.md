@@ -117,7 +117,8 @@ cd mockly-server
 | `REDIS_HOST` | Redis 호스트 |
 | `REDIS_PASSWORD` | Redis 비밀번호 |
 | `JWT_SECRET` | JWT 서명 키 (HS512) |
-| `GOOGLE_ANDROID_CLIENT_ID` | Google OAuth 클라이언트 ID |
+| `GOOGLE_ANDROID_CLIENT_ID` | Google OAuth 클라이언트 ID (Android) |
+| `GOOGLE_IOS_CLIENT_ID` | Google OAuth 클라이언트 ID (iOS, 선택) |
 | `OPENAI_API_KEY` | OpenAI API 키 |
 | `PORTONE_API_SECRET` | PortOne API 시크릿 |
 | `PORTONE_WEBHOOK_SECRET` | PortOne 웹훅 시크릿 |

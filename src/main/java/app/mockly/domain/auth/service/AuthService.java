@@ -3,6 +3,7 @@ package app.mockly.domain.auth.service;
 import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.GoogleUser;
 import app.mockly.domain.auth.dto.LocationInfo;
+import app.mockly.domain.auth.dto.Platform;
 import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.request.DevLoginRequest;
 import app.mockly.domain.auth.dto.response.LoginResponse;
@@ -74,8 +75,8 @@ public class AuthService {
 
     @Transactional
     public LoginResponse loginWithGoogleCode(String code, String codeVerifier, String redirectUri,
-                                             DeviceInfo deviceInfo, LocationInfo locationInfo) {
-        String idToken = googleOAuthService.exchangeAuthorizationCode(code, codeVerifier, redirectUri);
+                                             DeviceInfo deviceInfo, LocationInfo locationInfo, Platform platform) {
+        String idToken = googleOAuthService.exchangeAuthorizationCode(code, codeVerifier, redirectUri, platform);
         GoogleUser googleUser = googleOAuthService.verifyIdToken(idToken);
         User user = userRepository.findByProviderAndProviderId(OAuth2Provider.GOOGLE, googleUser.sub())
                 .orElseGet(() -> createUser(googleUser));

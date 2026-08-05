@@ -6,8 +6,6 @@ import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.Collections;
-
 @Configuration
 public class GoogleOAuthConfig {
 
@@ -17,7 +15,7 @@ public class GoogleOAuthConfig {
                 new NetHttpTransport(),
                 GsonFactory.getDefaultInstance()
             )
-            .setAudience(Collections.singletonList(properties.getClientId()))
+            .setAudience(properties.getAudiences())
             .setIssuer(properties.getIssuer())
             .build();
     }

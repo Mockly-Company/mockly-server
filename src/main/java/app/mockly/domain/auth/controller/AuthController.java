@@ -27,7 +27,8 @@ public class AuthController {
                 request.codeVerifier(),
                 request.redirectUri(),
                 request.deviceInfo(),
-                request.locationInfo());
+                request.locationInfo(),
+                request.platform());
         return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 

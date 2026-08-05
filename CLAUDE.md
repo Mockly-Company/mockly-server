@@ -320,6 +320,7 @@ POSTGRES_DB=mockly
 POSTGRES_PORT=5432
 JWT_SECRET=<secret-key>
 GOOGLE_ANDROID_CLIENT_ID=<google-oauth-client-id>
+GOOGLE_IOS_CLIENT_ID=<google-oauth-client-id-ios> # 선택, 미설정 시 iOS 로그인만 실패
 PORTONE_API_SECRET=<portone-api-secret>
 PORTONE_WEBHOOK_SECRET=<portone-webhook-secret>
 PORTONE_STORE_ID=<portone-store-id>
