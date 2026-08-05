@@ -19,6 +19,15 @@ jwt:
   access-token-expiration: 900000 # 15분
   refresh-token-expiration: 604800000 # 7일
 
+# OAuth 테스트 설정 (GoogleOAuthService @MockitoBean으로 대체)
+oauth:
+  google:
+    client-ids:
+      android: test-android-client-id.apps.googleusercontent.com
+      ios: test-ios-client-id.apps.googleusercontent.com
+    token-uri: https://oauth2.googleapis.com/token
+    issuer: https://accounts.google.com
+
 # OpenAI 테스트 설정 (InterviewAiService @MockitoBean으로 대체)
 spring.ai:
   openai:

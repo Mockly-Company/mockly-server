@@ -62,6 +62,7 @@ class PreprodDeploymentArtifactsTest {
                 "REDIS_PASSWORD",
                 "JWT_SECRET",
                 "GOOGLE_ANDROID_CLIENT_ID",
+                "GOOGLE_IOS_CLIENT_ID",
                 "PORTONE_API_SECRET",
                 "PORTONE_WEBHOOK_SECRET",
                 "OPENAI_API_KEY"

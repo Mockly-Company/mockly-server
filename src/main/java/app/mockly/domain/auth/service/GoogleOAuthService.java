@@ -2,6 +2,7 @@ package app.mockly.domain.auth.service;
 
 import app.mockly.domain.auth.dto.GoogleToken;
 import app.mockly.domain.auth.dto.GoogleUser;
+import app.mockly.domain.auth.dto.Platform;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.OAuth2Properties;
 import app.mockly.global.exception.InvalidTokenException;
@@ -25,12 +26,12 @@ public class GoogleOAuthService {
     private final OAuth2Properties oAuth2Properties;
     private final GoogleIdTokenVerifier verifier;
 
-    public String exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
+    public String exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri, Platform platform) {
         GoogleToken googleToken = restClient.post()
                 .uri(oAuth2Properties.getTokenUri())
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body("code=" + code +
-                        "&client_id=" + oAuth2Properties.getClientId() +
+                        "&client_id=" + oAuth2Properties.getClientId(platform) +
                         "&redirect_uri=" + redirectUri +
                         "&grant_type=authorization_code" +
                         "&code_verifier=" + codeVerifier)
@@ -56,6 +57,8 @@ public class GoogleOAuthService {
         try {
             GoogleIdToken googleIdToken = verifier.verify(idToken);
             if (googleIdToken == null) {
+                // 이 경로는 audience(client id) 불일치일 때도 타므로 로그 없이는 원인 추적이 불가능하다
+                log.warn("Google ID Token 검증 실패: audience/issuer/만료 중 하나가 불일치");
                 throw new InvalidTokenException(ApiStatusCode.INVALID_GOOGLE_TOKEN, "유효하지 않은 Google ID Token입니다");
             }
 

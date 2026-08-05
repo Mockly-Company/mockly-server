@@ -43,7 +43,9 @@ jwt:
 # OAUTH 설정
 oauth:
   google:
-    client-id: ${GOOGLE_ANDROID_CLIENT_ID}
+    client-ids:
+      android: ${GOOGLE_ANDROID_CLIENT_ID}
+      ios: ${GOOGLE_IOS_CLIENT_ID:} # 미설정 시 iOS 로그인만 실패, Android는 영향 없음
     token-uri: https://oauth2.googleapis.com/token
     issuer: https://accounts.google.com
 
