@@ -2,7 +2,6 @@ package app.mockly.domain.auth.dto.request;
 
 import app.mockly.domain.auth.dto.DeviceInfo;
 import app.mockly.domain.auth.dto.LocationInfo;
-import app.mockly.domain.auth.dto.Platform;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +16,6 @@ public record AuthorizationCodeRequest(
         @Valid
         @NotNull(message = "deviceInfo는 필수입니다.")
         DeviceInfo deviceInfo,
-        LocationInfo locationInfo, // Optional
-        Platform platform // Optional, 미전송 시 User-Agent로 추론 (Platform.resolve)
+        LocationInfo locationInfo // Optional
 ) {
 }

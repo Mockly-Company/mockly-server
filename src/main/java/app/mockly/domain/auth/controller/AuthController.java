@@ -29,8 +29,8 @@ public class AuthController {
             @Valid @RequestBody AuthorizationCodeRequest request,
             @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent
     ) {
-        Platform platform = Platform.resolve(request.platform(), userAgent);
-        log.info("Google 로그인 플랫폼 해석: platform={} source={}", platform, Platform.resolveSource(request.platform()));
+        Platform platform = Platform.fromUserAgent(userAgent);
+        log.info("Google 로그인 플랫폼 판별: platform={} userAgent={}", platform, userAgent);
 
         LoginResponse loginResponse = authService.loginWithGoogleCode(
                 request.code(),

@@ -141,8 +141,7 @@ class AuthControllerTest {
             "test-code-verifier",
             "https://mockly.app/oauth2/google/redirect",
                 new DeviceInfo("uuid-from-client", "device-name"),
-                new LocationInfo(127.0, 135.0),
-                Platform.ANDROID
+                new LocationInfo(127.0, 135.0)
         );
 
         // when & then
@@ -162,58 +161,45 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/auth/login/google/code - platform은 요청 본문 > User-Agent > ANDROID 순으로 해석한다")
+    @DisplayName("POST /api/auth/login/google/code - User-Agent로 플랫폼을 판별해 교환한다")
     void loginWithGoogleCode_ResolvesPlatform() throws Exception {
         given(googleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString(), any()))
                 .willReturn("mock-id-token");
         given(googleOAuthService.verifyIdToken(anyString()))
                 .willReturn(new GoogleUser("google-user-id-456", "ios@mockly.com", "iOS User", true));
 
-        // platform 필드가 아예 없는 기존 Android 클라이언트 요청
-        mockMvc.perform(post("/api/auth/login/google/code")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "code": "test-auth-code",
-                                  "codeVerifier": "test-code-verifier",
-                                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
-                                  "deviceInfo": {"deviceId": "no-platform-device", "deviceName": "device-name"}
-                                }
-                                """))
-                .andExpect(status().isOk());
+        String requestBody = """
+                {
+                  "code": "test-auth-code",
+                  "codeVerifier": "test-code-verifier",
+                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
+                  "deviceInfo": {"deviceId": "%s", "deviceName": "device-name"}
+                }
+                """;
 
         mockMvc.perform(post("/api/auth/login/google/code")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "code": "test-auth-code",
-                                  "codeVerifier": "test-code-verifier",
-                                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
-                                  "deviceInfo": {"deviceId": "ios-device", "deviceName": "iPhone"},
-                                  "platform": "IOS"
-                                }
-                                """))
+                        .header("User-Agent", "okhttp/4.12.0")
+                        .content(requestBody.formatted("android-device")))
                 .andExpect(status().isOk());
 
-        // platform 미전송 + 애플 네이티브 User-Agent -> IOS로 추론
         mockMvc.perform(post("/api/auth/login/google/code")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("User-Agent", "mockly/1 CFNetwork/3860.100.1 Darwin/25.5.0")
-                        .content("""
-                                {
-                                  "code": "test-auth-code",
-                                  "codeVerifier": "test-code-verifier",
-                                  "redirectUri": "https://mockly.app/oauth2/google/redirect",
-                                  "deviceInfo": {"deviceId": "ios-ua-device", "deviceName": "iPhone"}
-                                }
-                                """))
+                        .content(requestBody.formatted("ios-device")))
+                .andExpect(status().isOk());
+
+        // User-Agent가 없는 요청은 ANDROID로 처리한다
+        mockMvc.perform(post("/api/auth/login/google/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody.formatted("no-ua-device")))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<Platform> platformCaptor = ArgumentCaptor.forClass(Platform.class);
         verify(googleOAuthService, times(3))
                 .exchangeAuthorizationCode(anyString(), anyString(), anyString(), platformCaptor.capture());
         assertThat(platformCaptor.getAllValues())
-                .containsExactly(Platform.ANDROID, Platform.IOS, Platform.IOS);
+                .containsExactly(Platform.ANDROID, Platform.IOS, Platform.ANDROID);
     }
 
     @Test
