@@ -1,5 +1,6 @@
 package app.mockly.domain.auth.controller;
 
+import app.mockly.domain.auth.dto.Platform;
 import app.mockly.domain.auth.dto.UserInfo;
 import app.mockly.domain.auth.dto.request.*;
 import app.mockly.domain.auth.dto.response.LoginResponse;
@@ -8,6 +9,8 @@ import app.mockly.domain.auth.service.AuthService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -17,18 +20,25 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login/google/code")
-    public ResponseEntity<ApiResponse<LoginResponse>> loginWithGoogleCode(@Valid @RequestBody AuthorizationCodeRequest request) {
+    public ResponseEntity<ApiResponse<LoginResponse>> loginWithGoogleCode(
+            @Valid @RequestBody AuthorizationCodeRequest request,
+            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent
+    ) {
+        Platform platform = Platform.resolve(request.platform(), userAgent);
+        log.info("Google 로그인 플랫폼 해석: platform={} source={}", platform, Platform.resolveSource(request.platform()));
+
         LoginResponse loginResponse = authService.loginWithGoogleCode(
                 request.code(),
                 request.codeVerifier(),
                 request.redirectUri(),
                 request.deviceInfo(),
                 request.locationInfo(),
-                request.platform());
+                platform);
         return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 

@@ -19,7 +19,7 @@ public class LoginWithGoogleCodeDocs {
             fieldWithPath("deviceInfo").description("디바이스 정보").type(JsonFieldType.OBJECT),
             fieldWithPath("deviceInfo.deviceId").description("디바이스 고유 ID").type(SimpleType.STRING),
             fieldWithPath("deviceInfo.deviceName").description("디바이스 이름").type(SimpleType.STRING),
-            fieldWithPath("platform").description("클라이언트 플랫폼 (선택, ANDROID | IOS, 미전송 시 ANDROID)").type(SimpleType.STRING).optional(),
+            fieldWithPath("platform").description("클라이언트 플랫폼 (선택, ANDROID | IOS). 미전송 시 User-Agent로 추론하며 판별 불가 시 ANDROID").type(SimpleType.STRING).optional(),
             fieldWithPath("locationInfo").description("위치 정보 (선택)").type(JsonFieldType.OBJECT).optional(),
             fieldWithPath("locationInfo.latitude").description("위도").type(SimpleType.NUMBER).optional(),
             fieldWithPath("locationInfo.longitude").description("경도").type(SimpleType.NUMBER).optional()

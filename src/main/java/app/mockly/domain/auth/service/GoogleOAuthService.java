@@ -12,10 +12,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 
 @Service
@@ -37,7 +39,10 @@ public class GoogleOAuthService {
                         "&code_verifier=" + codeVerifier)
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    log.error("Google Token 교환 실패: {}", res.getStatusCode());
+                    // Google 응답 본문에는 error/error_description만 담기므로 로그로 남겨도 안전하다.
+                    // code와 code_verifier는 자격증명이므로 절대 남기지 않는다.
+                    log.error("Google Token 교환 실패: status={} platform={} redirectUri={} response={}",
+                            res.getStatusCode(), platform, redirectUri, readErrorBody(res));
                     throw new InvalidTokenException(ApiStatusCode.INVALID_GOOGLE_TOKEN, "Google 인증 코드가 유효하지 않습니다");
                 })
                 .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
@@ -51,6 +56,14 @@ public class GoogleOAuthService {
             throw new InvalidTokenException(ApiStatusCode.INVALID_TOKEN, "Google Token 교환에 실패했습니다");
         }
         return googleToken.idToken();
+    }
+
+    private String readErrorBody(ClientHttpResponse response) {
+        try {
+            return new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "(본문 읽기 실패: " + e.getMessage() + ")";
+        }
     }
 
     public GoogleUser verifyIdToken(String idToken) {

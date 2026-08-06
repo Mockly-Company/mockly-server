@@ -18,11 +18,6 @@ public record AuthorizationCodeRequest(
         @NotNull(message = "deviceInfo는 필수입니다.")
         DeviceInfo deviceInfo,
         LocationInfo locationInfo, // Optional
-        Platform platform // Optional, 미전송 시 ANDROID
+        Platform platform // Optional, 미전송 시 User-Agent로 추론 (Platform.resolve)
 ) {
-    public AuthorizationCodeRequest {
-        if (platform == null) {
-            platform = Platform.DEFAULT;
-        }
-    }
 }
