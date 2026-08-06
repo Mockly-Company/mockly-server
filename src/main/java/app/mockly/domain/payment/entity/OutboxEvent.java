@@ -1,11 +1,7 @@
 package app.mockly.domain.payment.entity;
 
 import app.mockly.global.common.BaseEntity;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
-import java.util.Map;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -17,8 +13,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class OutboxEvent extends BaseEntity {
-
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,33 +40,15 @@ public class OutboxEvent extends BaseEntity {
     @Column(length = 500)
     private String failReason;
 
-    public static OutboxEvent scheduleCreate(Long subscriptionId, String billingKey) {
-        try {
-            Map<String, Object> payloadMap = Map.of(
-                    "subscriptionId", subscriptionId,
-                    "billingKey", billingKey
-            );
-            String payload = objectMapper.writeValueAsString(payloadMap);
-            OutboxEvent event = new OutboxEvent();
-            event.aggregateType = "SUBSCRIPTION";
-            event.aggregateId = subscriptionId;
-            event.eventType = "SCHEDULE_CREATE";
-            event.payload = payload;
-            event.status = OutboxEventStatus.PENDING;
-            event.retryCount = 0;
-            return event;
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("OutboxEvent payload 직렬화 실패", e);
-        }
-    }
-
-    public String extractBillingKey() {
-        try {
-            JsonNode node = objectMapper.readTree(payload);
-            return node.get("billingKey").asText();
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Outbox payload 파싱 실패", e);
-        }
+    public static OutboxEvent createSchedule(Long subscriptionId, String payload) {
+        OutboxEvent event = new OutboxEvent();
+        event.aggregateType = "SUBSCRIPTION";
+        event.aggregateId = subscriptionId;
+        event.eventType = "SCHEDULE_CREATE";
+        event.payload = payload;
+        event.status = OutboxEventStatus.PENDING;
+        event.retryCount = 0;
+        return event;
     }
 
     public void markAsProcessed() {
