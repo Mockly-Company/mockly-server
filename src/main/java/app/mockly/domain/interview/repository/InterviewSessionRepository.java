@@ -5,6 +5,7 @@ import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -24,8 +25,10 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
 
     Optional<InterviewSession> findByIdAndUserId(UUID id, UUID userId);
 
+    @EntityGraph(attributePaths = "feedback")
     Page<InterviewSession> findByUserIdAndStatus(UUID userId, InterviewSessionStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = "feedback")
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
 
     List<InterviewSession> findByFeedbackStatusInAndUpdatedAtBefore(List<FeedbackStatus> statuses, Instant threshold);

@@ -112,7 +112,7 @@ class SubscriptionControllerTest {
                 .product(freeProduct)
                 .price(BigDecimal.ZERO)
                 .currency(Currency.KRW)
-                .billingCycle(BillingCycle.LIFETIME)
+                .billingCycle(BillingCycle.MONTHLY)
                 .build();
         freePlan = subscriptionPlanRepository.save(freePlan);
 

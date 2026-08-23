@@ -309,8 +309,11 @@ class InterviewControllerTest {
     @Test
     @DisplayName("GET /api/interviews - 성공: 세션 목록 조회")
     void getSessions_success() throws Exception {
-        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
-        interviewSessionRepository.save(InterviewSession.create(testUser, "프론트엔드 개발자", ExperienceLevel.MID, InterviewType.BEHAVIORAL, 3, "3년차 프론트엔드 개발자입니다."));
+        InterviewSession session = interviewSessionRepository.save(InterviewSession.create(
+                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR,
+                InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
+        session.abandon();
+        interviewSessionRepository.flush();
 
         mockMvc.perform(get("/api/interviews")
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -318,9 +321,12 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sessions").isArray())
-                .andExpect(jsonPath("$.data.sessions.length()").value(2))
+                .andExpect(jsonPath("$.data.sessions.length()").value(1))
+                .andExpect(jsonPath("$.data.sessions[0].endedAt").isString())
+                .andExpect(jsonPath("$.data.sessions[0].durationSeconds").isNumber())
+                .andExpect(jsonPath("$.data.sessions[0].feedbackStatus").doesNotExist())
                 .andExpect(jsonPath("$.data.pagination.page").value(1))
-                .andExpect(jsonPath("$.data.pagination.totalElements").value(2))
+                .andExpect(jsonPath("$.data.pagination.totalElements").value(1))
                 .andDo(document("interview-get-sessions",
                         resource(SessionListDocs.success())
                 ));
@@ -371,6 +377,8 @@ class InterviewControllerTest {
         InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
         interviewMessageRepository.save(InterviewMessage.createInterviewerMessage(session, "자기소개를 해주세요.", 1));
         interviewMessageRepository.save(InterviewMessage.createUserMessage(session, "안녕하세요, 저는 백엔드 개발자입니다.", 1));
+        session.abandon();
+        interviewSessionRepository.flush();
 
         mockMvc.perform(get("/api/interviews/{sessionId}", session.getId())
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -378,7 +386,9 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sessionId").value(session.getId().toString()))
-                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.status").value("ABANDONED"))
+                .andExpect(jsonPath("$.data.endedAt").isString())
+                .andExpect(jsonPath("$.data.durationSeconds").isNumber())
                 .andExpect(jsonPath("$.data.messages.length()").value(2))
                 .andExpect(jsonPath("$.data.messages[0].role").value("INTERVIEWER"))
                 .andExpect(jsonPath("$.data.messages[1].role").value("USER"))

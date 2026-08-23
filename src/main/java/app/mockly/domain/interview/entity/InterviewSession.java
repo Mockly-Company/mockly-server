@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -51,6 +52,9 @@ public class InterviewSession extends BaseEntity {
 
     private Instant completedAt;
 
+    @Column(name = "ended_at")
+    private Instant endedAt;
+
     @Column(length = 100)
     private String firstQuestionKeyword;
 
@@ -60,6 +64,9 @@ public class InterviewSession extends BaseEntity {
 
     @Column(length = 500)
     private String failReason;
+
+    @OneToOne(mappedBy = "session", fetch = FetchType.LAZY)
+    private InterviewFeedback feedback;
 
     public static InterviewSession create(User user, String position, ExperienceLevel experienceLevel,
                                           InterviewType interviewType, int totalQuestions, String selfIntroduction) {
@@ -82,6 +89,9 @@ public class InterviewSession extends BaseEntity {
     public void startFeedbackGeneration() {
         this.status = InterviewSessionStatus.FEEDBACK_PENDING;
         this.feedbackStatus = FeedbackStatus.PENDING;
+        if (this.endedAt == null) {
+            this.endedAt = Instant.now();
+        }
     }
 
     public void markFeedbackGenerating() {
@@ -107,6 +117,7 @@ public class InterviewSession extends BaseEntity {
 
     public void abandon() {
         this.status = InterviewSessionStatus.ABANDONED;
+        this.endedAt = Instant.now();
     }
 
     public void setFirstQuestionKeyword(String keyword) {
@@ -119,6 +130,17 @@ public class InterviewSession extends BaseEntity {
 
     public boolean isInProgress() {
         return status == InterviewSessionStatus.IN_PROGRESS;
+    }
+
+    public Long getDurationSeconds() {
+        if (getCreatedAt() == null || endedAt == null) {
+            return null;
+        }
+        return Duration.between(getCreatedAt(), endedAt).getSeconds();
+    }
+
+    public Integer getOverallScore() {
+        return feedback == null ? null : feedback.getOverallScore();
     }
 
     @PrePersist

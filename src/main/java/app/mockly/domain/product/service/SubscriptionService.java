@@ -165,8 +165,12 @@ public class SubscriptionService {
         return CancelSubscriptionResponse.from(subscription);
     }
 
+    @Transactional
     public void assignFreePlan(UUID userId) {
-        subscriptionPlanRepository.findByBillingCycle(BillingCycle.LIFETIME)
+        if (subscriptionRepository.existsByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)) {
+            return;
+        }
+        subscriptionPlanRepository.findActiveByPlanTierAndBillingCycle(PlanTier.FREE, BillingCycle.MONTHLY)
                 .ifPresent(freePLan -> {
                     Subscription subscription = Subscription.create(userId, freePLan);
                     subscription.activate();
