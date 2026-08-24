@@ -207,10 +207,9 @@ class SubscriptionControllerTest {
     @Test
     @DisplayName("GET /api/subscriptions - 성공: 내 구독 조회")
     void getSubscription_Success() throws Exception {
-        // 구독 생성
         Subscription subscription = Subscription.create(testUser.getId(), basicMonthlyPlan);
         subscription.activate();
-        subscriptionRepository.save(subscription);
+        subscription = subscriptionRepository.save(subscription);
 
         mockMvc.perform(get("/api/subscriptions")
                         .header("Authorization", "Bearer " + validAccessToken)
@@ -218,7 +217,11 @@ class SubscriptionControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(subscription.getId()))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.currentPeriodStart").exists())
+                .andExpect(jsonPath("$.data.currentPeriodEnd").exists())
+                .andExpect(jsonPath("$.data.nextBillingDate").exists())
                 .andExpect(jsonPath("$.data.planSnapshot.name").value("Basic"))
                 .andDo(document("subscription-get",
                         resource(SubscriptionDocs.getSuccess())
@@ -226,17 +229,33 @@ class SubscriptionControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/subscriptions - 성공: 구독 없음 (null 반환)")
+    @DisplayName("GET /api/subscriptions - 성공: PAST_DUE 구독 조회")
+    void getSubscription_PastDue() throws Exception {
+        Subscription subscription = Subscription.create(testUser.getId(), basicMonthlyPlan);
+        subscription.activate();
+        subscription.markAsPastDue();
+        subscription = subscriptionRepository.save(subscription);
+
+        mockMvc.perform(get("/api/subscriptions")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(subscription.getId()))
+                .andExpect(jsonPath("$.data.status").value("PAST_DUE"));
+    }
+
+    @Test
+    @DisplayName("GET /api/subscriptions - 실패: 현재 구독 없음")
     void getSubscription_NoSubscription() throws Exception {
         mockMvc.perform(get("/api/subscriptions")
                         .header("Authorization", "Bearer " + validAccessToken)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").doesNotExist())
-                .andDo(document("subscription-get-empty",
-                        resource(SubscriptionDocs.getEmpty())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andDo(document("subscription-get-not-found",
+                        resource(SubscriptionDocs.getNotFound())
                 ));
     }
 

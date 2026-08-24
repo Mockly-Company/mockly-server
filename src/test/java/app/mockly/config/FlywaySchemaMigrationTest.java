@@ -24,6 +24,8 @@ class FlywaySchemaMigrationTest {
 
             assertThat(tableExists(metaData, "subscription_product")).isTrue();
             assertThat(tableExists(metaData, "quota_usage")).isTrue();
+            assertThat(tableExists(metaData, "plan")).isFalse();
+            assertThat(tableExists(metaData, "plan_price")).isFalse();
             assertThat(columnExists(metaData, "subscription_product", "weekly_interview_limit")).isTrue();
             assertThat(columnExists(metaData, "subscription_product", "weekly_improvement_practice_limit")).isTrue();
             assertThat(tableExists(metaData, "interview_quota")).isFalse();

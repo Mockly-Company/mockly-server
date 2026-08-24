@@ -23,8 +23,12 @@ public class SubscriptionProductDocs {
             fieldWithPath("products[].id").description("상품 ID").type(JsonFieldType.NUMBER),
             fieldWithPath("products[].name").description("상품명").type(SimpleType.STRING),
             fieldWithPath("products[].description").description("상품 설명").type(SimpleType.STRING),
+            fieldWithPath("products[].planTier").description("상품 등급 (FREE, BASIC, PRO 순서)").type(SimpleType.STRING),
+            fieldWithPath("products[].maxQuestions").description("면접 1회당 최대 질문 수").type(JsonFieldType.NUMBER),
+            fieldWithPath("products[].weeklyInterviewLimit").description("주간 면접 이용 한도").type(JsonFieldType.NUMBER),
+            fieldWithPath("products[].weeklyImprovementPracticeLimit").description("주간 개선 연습 이용 한도").type(JsonFieldType.NUMBER),
             fieldWithPath("products[].features").description("기능 목록").type(JsonFieldType.ARRAY),
-            fieldWithPath("products[].plans").description("요금제 목록").type(JsonFieldType.ARRAY),
+            fieldWithPath("products[].plans").description("활성 MONTHLY/KRW 요금제 목록").type(JsonFieldType.ARRAY),
             fieldWithPath("products[].plans[].id").description("플랜 ID").type(JsonFieldType.NUMBER),
             fieldWithPath("products[].plans[].price").description("가격").type(SimpleType.NUMBER),
             fieldWithPath("products[].plans[].currency").description("통화").type(SimpleType.STRING),
@@ -36,7 +40,7 @@ public class SubscriptionProductDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription Product")
                 .summary("구독 상품 목록 조회 (비로그인)")
-                .description("구독 가능한 상품 목록을 조회합니다. 비로그인 시 모든 플랜의 isActive가 false입니다.")
+                .description("활성 상품을 FREE, BASIC, PRO 순서로 조회합니다. MONTHLY/KRW 플랜만 노출하며, 비로그인 시 모든 플랜의 isActive가 false입니다.")
                 .responseFields(ApiResponseDocs.withDataFields(PRODUCTS_RESPONSE_FIELDS))
                 .build();
     }
@@ -45,7 +49,7 @@ public class SubscriptionProductDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription Product")
                 .summary("구독 상품 목록 조회 (로그인, 구독 없음)")
-                .description("로그인 상태이지만 활성 구독이 없는 경우, 모든 플랜의 isActive가 false입니다.")
+                .description("ACTIVE와 PAST_DUE 구독이 모두 없는 경우, 모든 플랜의 isActive가 false입니다.")
                 .requestHeaders(OPTIONAL_AUTH_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(PRODUCTS_RESPONSE_FIELDS))
                 .build();
@@ -55,7 +59,7 @@ public class SubscriptionProductDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription Product")
                 .summary("구독 상품 목록 조회 (로그인, 구독 있음)")
-                .description("로그인 상태이고 활성 구독이 있는 경우, 해당 플랜의 isActive가 true입니다.")
+                .description("로그인 사용자의 ACTIVE 또는 PAST_DUE 구독에 해당하는 플랜만 isActive가 true입니다.")
                 .requestHeaders(OPTIONAL_AUTH_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(PRODUCTS_RESPONSE_FIELDS))
                 .build();

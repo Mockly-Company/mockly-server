@@ -130,8 +130,12 @@ public class SubscriptionService {
 
     public GetSubscriptionResponse getMySubscription(UUID userId) {
         return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
+                .or(() -> subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.PAST_DUE))
                 .map(GetSubscriptionResponse::from)
-                .orElse(null);
+                .orElseThrow(() -> new BusinessException(
+                        ApiStatusCode.RESOURCE_NOT_FOUND,
+                        "현재 구독을 찾을 수 없습니다."
+                ));
     }
 
     @Transactional

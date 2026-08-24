@@ -91,19 +91,16 @@ public class SubscriptionDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription")
                 .summary("내 구독 조회")
-                .description("현재 활성화된 구독 정보를 조회합니다.")
+                .description("ACTIVE 구독을 우선 조회하고, 없으면 PAST_DUE 구독 정보를 조회합니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(GET_RESPONSE_FIELDS))
                 .build();
     }
 
-    public static ResourceSnippetParameters getEmpty() {
+    public static ResourceSnippetParameters getNotFound() {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription")
-                .summary("내 구독 조회 - 구독 없음")
-                .description("활성화된 구독이 없는 경우 data가 null로 반환됩니다.")
-                .requestHeaders(REQUEST_HEADERS)
-                .responseFields(ApiResponseDocs.noContentFields())
+                .responseFields(ApiResponseDocs.errorResponse("RESOURCE_NOT_FOUND"))
                 .build();
     }
 

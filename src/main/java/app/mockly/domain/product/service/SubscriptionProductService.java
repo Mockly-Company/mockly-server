@@ -26,6 +26,7 @@ public class SubscriptionProductService {
         Integer activePlanId = null;
         if (userId != null) {
             activePlanId = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
+                    .or(() -> subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.PAST_DUE))
                     .map(subscription -> subscription.getSubscriptionPlan().getId())
                     .orElse(null);
         }
