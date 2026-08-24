@@ -15,6 +15,3 @@ INSERT INTO subscription_product (name, description, features, plan_tier, is_act
 INSERT INTO subscription_plan (product_id, price, currency, billing_cycle) SELECT id, 0, 'KRW', 'MONTHLY' FROM subscription_product WHERE plan_tier = 'FREE';
 INSERT INTO subscription_plan (product_id, price, currency, billing_cycle) SELECT id, 5900, 'KRW', 'MONTHLY' FROM subscription_product WHERE plan_tier = 'BASIC';
 INSERT INTO subscription_plan (product_id, price, currency, billing_cycle) SELECT id, 9900, 'KRW', 'MONTHLY' FROM subscription_product WHERE plan_tier = 'PRO';
-
-INSERT INTO interview_quota (plan_tier, daily_limit, max_questions_per_session)
-VALUES ('FREE', 1, 3), ('BASIC', 5, 5), ('PRO', 15, 10);

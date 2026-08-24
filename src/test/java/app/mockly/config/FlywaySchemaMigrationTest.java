@@ -23,8 +23,10 @@ class FlywaySchemaMigrationTest {
             DatabaseMetaData metaData = connection.getMetaData();
 
             assertThat(tableExists(metaData, "subscription_product")).isTrue();
+            assertThat(tableExists(metaData, "quota_usage")).isTrue();
             assertThat(columnExists(metaData, "subscription_product", "weekly_interview_limit")).isTrue();
             assertThat(columnExists(metaData, "subscription_product", "weekly_improvement_practice_limit")).isTrue();
+            assertThat(tableExists(metaData, "interview_quota")).isFalse();
             assertThat(tableExists(metaData, "payment_checkout")).isFalse();
 
             try (var freeLimit = connection.createStatement().executeQuery("""

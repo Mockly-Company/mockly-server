@@ -18,17 +18,22 @@ public class QuotaDocs {
     );
 
     private static final List<FieldDescriptor> RESPONSE_FIELDS = List.of(
-            fieldWithPath("dailyLimit").description("플랜별 일일 허용 세션 수").type(SimpleType.NUMBER),
-            fieldWithPath("usedToday").description("오늘 사용한 세션 수").type(SimpleType.NUMBER),
-            fieldWithPath("remaining").description("오늘 남은 세션 수").type(SimpleType.NUMBER),
-            fieldWithPath("maxQuestionsPerSession").description("플랜별 세션당 최대 질문 수").type(SimpleType.NUMBER)
+            fieldWithPath("periodStart").description("현재 주간 이용기간 시작 시각(KST)").type(SimpleType.STRING),
+            fieldWithPath("nextResetAt").description("다음 주간 한도 리셋 시각(KST)").type(SimpleType.STRING),
+            fieldWithPath("maxQuestions").description("플랜별 세션당 최대 질문 수").type(SimpleType.NUMBER),
+            fieldWithPath("interview.limit").description("주간 면접 한도").type(SimpleType.NUMBER),
+            fieldWithPath("interview.used").description("현재 주간 면접 사용량").type(SimpleType.NUMBER),
+            fieldWithPath("interview.remaining").description("현재 주간 면접 잔여량").type(SimpleType.NUMBER),
+            fieldWithPath("improvementPractice.limit").description("주간 개선 연습 한도").type(SimpleType.NUMBER),
+            fieldWithPath("improvementPractice.used").description("현재 주간 개선 연습 사용량").type(SimpleType.NUMBER),
+            fieldWithPath("improvementPractice.remaining").description("현재 주간 개선 연습 잔여량").type(SimpleType.NUMBER)
     );
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
                 .tag("Interview")
                 .summary("면접 쿼터 조회")
-                .description("현재 플랜의 일일 면접 쿼터와 오늘 사용 현황을 조회합니다.")
+                .description("현재 주간 이용기간의 면접·개선 연습 쿼터를 조회합니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))
                 .build();

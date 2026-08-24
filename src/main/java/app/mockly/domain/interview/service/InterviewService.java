@@ -1,8 +1,8 @@
 package app.mockly.domain.interview.service;
 
+import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
-import app.mockly.domain.interview.dto.QuestionStream;
 import app.mockly.domain.interview.dto.request.CreateInterviewRequest;
 import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.dto.response.*;
@@ -10,11 +10,7 @@ import app.mockly.domain.interview.event.FeedbackRequestedEvent;
 import app.mockly.domain.interview.entity.*;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
-import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
-import app.mockly.domain.product.entity.PlanTier;
-import app.mockly.domain.product.entity.SubscriptionStatus;
-import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,10 +27,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import reactor.core.publisher.Flux;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -43,39 +35,28 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class InterviewService {
 
-    private static final List<String> GREETINGS = List.of(
-            "안녕하세요, 만나서 반갑습니다.",
-            "안녕하세요, 오늘 면접에 참여해 주셔서 감사합니다."
-    );
     private static final Random RANDOM = new Random();
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
     private final InterviewFeedbackRepository interviewFeedbackRepository;
     private final UserRepository userRepository;
-    private final SubscriptionRepository subscriptionRepository;
     private final InterviewAiService interviewAiService;
-    private final InterviewQuotaRepository interviewQuotaRepository;
-    private final InterviewSessionWriter interviewSessionWriter;
+    private final InterviewCreationTransaction interviewCreationTransaction;
+    private final WeeklyQuotaService weeklyQuotaService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
-
-        PlanTier plan = getUserPlan(userId);
-        validateQuota(userId, plan);
-        validateQuestionCount(request.totalQuestions(), plan);
-
         List<String> candidates = interviewAiService.extractKeywordCandidates(
                 request.selfIntroduction(), request.position());
         log.info("keyword candidates: {}", candidates);
         String keyword = candidates.get(RANDOM.nextInt(candidates.size()));
         log.info("selected keyword: {}", keyword);
 
-        InterviewSession session = interviewSessionWriter.saveNewSession(user, request, keyword);
-        String greeting = GREETINGS.get(RANDOM.nextInt(GREETINGS.size()));
-        return CreateInterviewResponse.from(session, greeting);
+        String greeting = RANDOM.nextBoolean()
+                ? "안녕하세요, 만나서 반갑습니다."
+                : "안녕하세요, 오늘 면접에 참여해 주셔서 감사합니다.";
+        return interviewCreationTransaction.create(userId, request, keyword, greeting);
     }
 
     @Transactional
@@ -147,54 +128,11 @@ public class InterviewService {
         return GetSessionListResponse.from(result);
     }
 
-    // active subscription이 있으면 PlanTier 반환, 없으면 FREE
-    private PlanTier getUserPlan(UUID userId) {
-        return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .map(sub -> sub.getSubscriptionPlan().getProduct().getPlanTier())
-                .orElse(PlanTier.FREE);
-    }
-
-    private InterviewQuota getInterviewQuota(PlanTier plan) {
-        return interviewQuotaRepository.findById(plan)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "면접 쿼터 설정을 찾을 수 없습니다."));
-    }
-
-    // TODO: timezone 지원 시 TimeUtils 또는 TimeRangeProvider로 이전
-    private record TodayRange(Instant start, Instant end) {}
-
-    private TodayRange getTodayKstRange() {
-        ZoneId kst = ZoneId.of("Asia/Seoul");
-        ZonedDateTime startOfDay = LocalDate.now(kst).atStartOfDay(kst);
-        return new TodayRange(startOfDay.toInstant(), startOfDay.plusDays(1).toInstant());
-    }
-
-    private void validateQuota(UUID userId, PlanTier plan) {
-        int limit = getInterviewQuota(plan).getDailyLimit();
-        TodayRange range = getTodayKstRange();
-        long todayCount = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
-        if (todayCount >= limit) {
-            throw new BusinessException(ApiStatusCode.QUOTA_EXCEEDED);
-        }
-    }
-
-    // preset {3,5,10} 중 플랜의 maxQuestionsPerSession 이하인 값만 허용
-    private void validateQuestionCount(int totalQuestions, PlanTier plan) {
-        int max = getInterviewQuota(plan).getMaxQuestionsPerSession();
-        Set<Integer> allowed = Set.of(3, 5, 10).stream()
-                .filter(q -> q <= max)
-                .collect(Collectors.toSet());
-        if (!allowed.contains(totalQuestions)) {
-            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "현재 플랜에서 선택할 수 없는 질문 개수입니다.");
-        }
-    }
-
     @Transactional(readOnly = true)
     public GetQuotaResponse getQuota(UUID userId) {
-        PlanTier plan = getUserPlan(userId);
-        InterviewQuota quota = getInterviewQuota(plan);
-        TodayRange range = getTodayKstRange();
-        long usedToday = interviewSessionRepository.countTodaySessions(userId, range.start(), range.end());
-        return GetQuotaResponse.of(quota.getDailyLimit(), usedToday, quota.getMaxQuestionsPerSession());
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
+        return weeklyQuotaService.getQuota(user);
     }
 
     @Transactional(readOnly = true)

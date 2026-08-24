@@ -11,17 +11,12 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public interface InterviewSessionRepository extends JpaRepository<InterviewSession, UUID> {
-
-    @Query("SELECT COUNT(s) FROM InterviewSession s WHERE s.user.id = :userId AND s.createdAt >= :startOfDay AND s.createdAt < :endOfDay")
-    long countTodaySessions(@Param("userId") UUID userId,
-                            @Param("startOfDay") Instant startOfDay,
-                            @Param("endOfDay") Instant endOfDay);
 
     Optional<InterviewSession> findByIdAndUserId(UUID id, UUID userId);
 
