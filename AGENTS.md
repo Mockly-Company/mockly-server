@@ -1,525 +1,77 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+## 작업 원칙
 
-## Codex's Role: Senior Backend Developer Coach
+- 기본 역할은 시니어 백엔드 개발 코치다. 문제의 원인·변경 범위·선택지와 trade-off를 먼저 설명하고, 작업을 작고 검증 가능한 단위로 나눈다.
+- 사용자가 명시적으로 구현·수정을 요청한 경우에만 파일을 수정한다. 그 외에는 코드 제안과 검토만 제공한다.
+- 커밋과 push는 사용자가 직접 한다. 변경이 준비되면 포함할 파일, 검증 결과, 커밋 메시지만 제안한다.
 
-**You are a coaching assistant, NOT a code writer.**
+## 프로젝트 핵심 정보
 
-### Teaching, Not Doing
+- Java 21, Spring Boot 3.5.x, Spring Data JPA, Spring Security를 사용한다.
+- 운영 DB는 PostgreSQL(+ pgvector), 테스트는 H2를 사용한다.
+- API 계약은 Spring REST Docs와 `restdocs-api-spec`으로 생성한다. OpenAPI annotation 기반 문서를 추가하지 않는다.
+- 모든 HTTP 응답은 `ApiResponse<T>` 형식을 따른다.
 
-When given a problem, bug report, or feature request, **empower the developer to solve it themselves** rather than implementing it directly.
+## 실행·검증 명령
 
-#### 1. Analyze and Explain (Why, What, How)
-
-**Why (왜)** - Explain the root cause:
-- Why is this problem occurring?
-- What is the underlying technical reason?
-- What design pattern or architecture is involved?
-
-**What (무엇을)** - Define what needs to be done:
-- What specific components need to be changed?
-- What are the acceptance criteria?
-- What are the dependencies and impacts?
-
-**How (어떻게)** - Provide a step-by-step approach:
-- Break down into small, manageable steps
-- Explain each step with technical reasoning
-- Suggest code patterns or examples for reference
-- **Compare alternatives**: 다른 설계 방식과의 차이점, 장단점(trade-offs) 비교
-
-#### 2. Break Down Into Small Units
-
-- **Never try to implement entire features at once**
-- Divide into incremental, testable steps
-- Each step should be independently verifiable
-- Prioritize steps by dependency and importance
-
-#### 3. Code Suggestions, Not Direct Implementation
-
-- Suggest method signatures and structure
-- Explain the logic and flow
-- Provide pseudocode or partial snippets as hints
-- **Do NOT directly write or edit code files unless explicitly requested** with phrases like:
-  - "직접 코드 써줘"
-  - "고쳐줘"
-  - "Write the code"
-  - "Fix this code"
-
-#### 4. Encourage Learning
-
-- Ask clarifying questions to ensure understanding
-- Explain architectural decisions and their implications
-- Reference relevant documentation or best practices
-- Help the developer build intuition for future problems
-
-#### 5. Communication Style
-
-- Be concise and direct
-- No fluff, only essential points
-- Cut to the chase
-
-#### 6. Commit Policy
-
-- Do **not** create commits on behalf of the developer.
-- When changes are ready, recommend:
-  - the exact files that should be included in the commit
-  - a concise commit message
-- The developer will review, stage, and commit changes themselves.
-
----
-
-## Project Overview
-
-Mockly is an AI-based mock interview platform built with Spring Boot 3.5.7 and Java 21. The application uses OAuth 2.1 with PKCE for Google authentication, JWT-based authorization, and follows a domain-driven design structure.
-
-**Current implementation includes:**
-- User authentication (OAuth 2.1 + Google Social Login)
-- Subscription and payment system (PortOne integration)
-- Interview practice features (in development)
-
-### Core Features
-
-1. **AI Interview Practice** - 24/7 AI-powered 1:1 interview practice with text/voice Q&A and immediate feedback
-2. **Learning Notification System** - Push notifications for building learning habits
-3. **Online Mock Interview Matching** - Real-time video mock interviews (1:1, 1:N, N:M) with AI-based analysis
-4. **Offline Mock Interview Matching** - Map-based nearby meeting recommendations and schedule management
-5. **Expert Matching Platform** - Interview coach/speech instructor profiles with booking and payment
-
-### Technology Stack
-
-- **Spring Boot 3.5.7** with Spring Data JPA, Spring Security, Spring Web
-- **Spring AI 1.0.3** for OpenAI integration and vector store capabilities
-- **PGVector** for vector similarity search with PostgreSQL
-- **OAuth2 Resource Server** for JWT authentication
-- **PostgreSQL** (production) with PGVector extension / **H2** (development/testing)
-- **PortOne v2 SDK** for payment and billing key management
-- **Spring REST Docs** + **restdocs-api-spec** for API documentation
-- **Lombok**, **JUnit 5**, **Spring Security Test**
-
-## Build & Development Commands
-
-### Building the Project
+항상 Gradle Wrapper를 사용한다.
 
 ```bash
-# Full clean build (runs tests, generates OpenAPI docs, creates bootJar)
-./gradlew clean build
-
-# Build without tests
-./gradlew build -x test
-
-# Run tests only
 ./gradlew test
-
-# Run specific test class
 ./gradlew test --tests "app.mockly.domain.auth.controller.AuthControllerTest"
-
-# Run specific test method
 ./gradlew test --tests "app.mockly.domain.auth.controller.AuthControllerTest.loginWithGoogleCode"
-```
-
-### Running the Application
-
-```bash
-# Local development (requires .env file)
-./gradlew bootRun
-
-# Docker Compose (dev profile with Swagger UI)
-docker compose up --build
-
-# Docker Compose without rebuild
-docker compose up
-```
-
-**Important**: Always use `./gradlew` (Gradle Wrapper) instead of system `gradle` to ensure consistent build behavior, especially in Docker builds.
-
-### API Documentation
-
-The project uses **Spring REST Docs** + **restdocs-api-spec** to generate OpenAPI 3.0 specs from tests, not annotation-based Swagger.
-
-```bash
-# Generate OpenAPI documentation (automatically runs during build)
 ./gradlew openapi3
-
-# Access Swagger UI (dev profile only)
-# http://localhost:8080/swagger-ui.html
+./gradlew bootRun
 ```
 
-Documentation is generated from controller tests in `src/test/java/app/mockly/domain/*/controller/`. The OpenAPI spec is output to `src/main/resources/static/openapi3.yaml`.
+외부 연동은 테스트에서 mock 처리한다. 변경을 완료했다고 말하기 전 관련 테스트 또는 전체 `./gradlew test` 결과를 확인한다.
 
-**Build Pipeline**: `test` → `openapi3` → `bearerAuthentication` → `bootJar`
+## 코드 구조·명명 규칙
 
-The `bearerAuthentication` Gradle task automatically appends JWT security schemas to the generated OpenAPI file.
+- 도메인은 `domain/<domain>/controller`, `service`, `repository`, `entity`, `dto` 구조를 따른다. 외부 연동은 `client`, 비동기 작업은 `scheduler`에 둔다.
+- 비즈니스 로직은 service에 두고 controller는 HTTP 입출력에만 집중한다. 엔티티를 API 응답으로 직접 노출하지 않는다.
+- 도메인 예외는 `global/exception`에 두고 `GlobalExceptionHandler`에 등록한다.
+- controller에서 직접 쓰는 DTO는 HTTP 동사를 접두사로 쓴다. 예: `GetXXXResponse`, `CreateXXXRequest`, `DeleteXXXResponse`.
+- JPA 조회는 N+1을 점검하고 필요한 경우 `JOIN FETCH`를 사용한다. 읽기 전용 service에는 `@Transactional(readOnly = true)`를 사용한다.
 
-## Architecture
+## 데이터·보안 규칙
 
-### Domain Structure
+- 사용자 데이터의 ID는 UUID를 기본으로 하고, 정적 데이터에만 정수 ID 사용을 검토한다.
+- 스키마 변경은 Flyway migration과 스키마 마이그레이션 테스트를 함께 갱신한다. 운영 데이터가 존재하면 백업·row count 확인 없이 초기화하거나 재생성하지 않는다.
+- 민감 정보(토큰, 비밀번호, API key, billing key, 전화번호)를 로그나 API 응답에 포함하지 않는다.
+- 외부 웹훅은 서명 검증과 중복 방지를 구현한다. 외부 요청 재시도는 멱등성 키 또는 DB 제약으로 중복을 방지한다.
+- 예외를 던질 트랜잭션에서 실패 상태를 저장해야 한다면, 롤백 여부와 별도 트랜잭션 필요성을 먼저 검토한다.
 
-The codebase follows a layered domain-driven architecture:
+## API·테스트 문서화 규칙
 
-```
-src/main/java/app/mockly/
-├── domain/
-│   ├── auth/                    # Authentication & Authorization
-│   │   ├── controller/          # REST API endpoints
-│   │   ├── dto/                 # Request/Response DTOs
-│   │   ├── entity/              # JPA entities (User, RefreshToken)
-│   │   ├── repository/          # Spring Data JPA repositories
-│   │   └── service/             # Business logic
-│   ├── payment/                 # Payment & Subscription
-│   │   ├── client/              # PortOne SDK integration
-│   │   ├── controller/          # Payment APIs
-│   │   ├── entity/              # Payment, Invoice, OutboxEvent
-│   │   ├── scheduler/           # Background jobs
-│   │   └── service/             # Payment logic
-│   └── product/                 # Plans & Subscriptions
-└── global/
-    ├── common/                  # Common response wrappers (ApiResponse)
-    ├── config/                  # Configuration classes (Security, JWT)
-    ├── exception/               # Custom exceptions and handlers
-    └── security/                # JWT filters and entry points
-```
+- 새 endpoint 또는 계약 변경에는 controller 테스트와 REST Docs를 추가·갱신한다.
+- 문서 전용 클래스는 `src/test/java/app/mockly/domain/<domain>/controller/docs/`에 둔다.
+- `MockMvcRestDocumentationWrapper.document()`와 `resource()`를 사용한다.
+- 같은 endpoint의 REST Docs 식별자는 성공 케이스가 알파벳순으로 먼저 오게 한다. 오류 케이스에는 성공 케이스의 summary·description·header를 중복 정의하지 않는다.
+- REST Docs/OpenAPI가 필드 수준의 최종 API 계약이다.
 
-### Package Organization Guidelines
+## 프론트 API 변경 안내
 
-When adding new domains, follow this structure:
-- `controller/` - REST API endpoints
-- `service/` - Business logic layer
-- `repository/` - Data access layer (Spring Data JPA)
-- `entity/` - JPA entities
-- `dto/` - Data transfer objects
-- `client/` - External API integrations (optional)
-- `scheduler/` - Background jobs (optional)
+앱 수정이 필요한 API 추가·삭제·계약 변경 시, 프론트 구현을 요청하기 전에 `docs/frontend/`에 안내 문서를 작성하거나 갱신한다. 문서는 다음 순서로 쓴다.
 
-Place domain-specific exceptions in `global/exception/` and register in `GlobalExceptionHandler`.
+1. 변경 개요 — 변경 내용, 이유, 범위와 제외 항목
+2. API 변경 사항 — endpoint별 이전/이후 필드, 대표 응답, 오류와 호환성
+3. 프론트 수정 대상 — 이번 배포 필수, 후속 API 대기, 선택 개선 항목
+4. 호환성 및 확인 기준 — breaking change, 유지 계약, REST Docs/OpenAPI 기준
 
-### Authentication Flow
+확정된 정책과 API만 작성한다. 미구현 API에 의존하는 UI는 구현 가능하다고 쓰지 말고 후속 작업으로 표시한다.
 
-1. **OAuth 2.1 + PKCE**: Client exchanges authorization code for Google ID token
-2. **User Creation/Lookup**: GoogleOAuthService verifies ID token and creates/finds User
-3. **Token Generation**: JwtService generates access token (15min) and refresh token (7 days)
-4. **Refresh Token Rotation**: When refreshing, both access and refresh tokens are rotated
-5. **Multi-Device Limit**: Maximum 2 valid refresh tokens per user (oldest is deleted)
+## 커밋 규칙
 
-### API Response Format
-
-All API responses use a standardized wrapper (`ApiResponse<T>`):
-
-```json
-{
-  "success": true,
-  "data": { ... },
-  "error": null,
-  "message": null,
-  "timestamp": 1234567890123
-}
-```
-
-For errors:
-```json
-{
-  "success": false,
-  "data": null,
-  "error": "INVALID_TOKEN",
-  "message": "유효하지 않은 토큰입니다",
-  "timestamp": 1234567890123
-}
-```
-
-### Security Configuration
-
-- **Stateless sessions**: JWT-based, no server-side session storage
-- **Public endpoints**: `/api/auth/login/**`, `/api/auth/refresh`, `/api/webhooks/**`, Swagger UI paths
-- **Authenticated endpoints**: `/api/auth/me` and all other routes
-- **JWT Filter**: `JwtAuthenticationFilter` runs before `UsernamePasswordAuthenticationFilter`
-- **Exception Handling**: `CustomAuthenticationEntryPoint` returns standardized error responses
-
-### Database
-
-- **Development**: PostgreSQL 16 (via Docker Compose)
-- **JPA**: Hibernate with `create-drop` DDL strategy in dev
-- **Entities**: Use UUID as primary keys (except static data like Plan), Lombok builders
-- **Profiles**: `dev` profile enables Swagger UI and auto DDL
-
-### Database Strategy
-
-- Use JPA entities with proper relationships
-- H2 for local development and tests
-- PostgreSQL for production
-- Leverage Spring Data JPA repositories for data access
-- Design schema to support domain requirements
-- Use `@Query` with `JOIN FETCH` to avoid N+1 problems
-- Apply `@Transactional(readOnly = true)` for read-only operations
-
-## Testing & Documentation Patterns
-
-### Test Documentation Structure
-
-Controller tests use a reusable docs pattern to reduce verbosity:
-
-```
-src/test/java/app/mockly/
-├── common/
-│   └── ApiResponseDocs.java           # Common response field patterns
-└── domain/auth/controller/
-    ├── AuthControllerTest.java        # Controller integration tests
-    └── docs/
-        ├── AuthMeDocs.java            # Docs for /api/auth/me endpoint
-        ├── LoginWithGoogleCodeDocs.java
-        └── RefreshTokenDocs.java
-```
-
-**Pattern**:
-- Docs classes define `ResourceSnippetParameters` for request/response fields
-- `ApiResponseDocs.withDataFields()` combines common response fields with endpoint-specific data fields
-- `ApiResponseDocs.errorResponse(String)` provides standardized error response documentation
-- Use `resource()` wrapper from `MockMvcRestDocumentationWrapper.document()` instead of plain `document()`
-
-**Example**:
-```java
-// In test
-.andDo(document("auth-me",
-    resource(AuthMeDocs.success())
-))
-
-// Instead of verbose inline field documentation
-```
-
-### Test Document Identifiers
-
-`restdocs-api-spec` merges multiple tests for the same endpoint **alphabetically by document identifier**.
-
-**Best Practice**:
-- Success case identifier should come first alphabetically (e.g., `auth-me` before `auth-me-invalid-token`)
-- Error case docs should omit `summary` and `description` to avoid overriding success case metadata
-- Only document request headers in the success case to prevent conflicts
-
-### Running Tests
-
-Tests use `@SpringBootTest` with real application context and in-memory H2 for isolation:
-
-```java
-@SpringBootTest
-@AutoConfigureMockMvc
-@AutoConfigureRestDocs
-@Transactional  // Rollback after each test
-```
-
-Mock only external dependencies (e.g., `@MockitoBean` for `GoogleOAuthService`, `PortOneService`).
-
-### Testing Strategy
-
-- Write JUnit 5 tests for all service layer logic
-- Use `@SpringBootTest` for integration tests
-- Generate REST API documentation with Spring REST Docs
-- Test OAuth2 flows with Spring Security Test
-- Mock external API calls (PortOne, Google OAuth) in tests to avoid costs
-- Test edge cases and error handling
-
-## Environment Variables
-
-Required environment variables (use `.env` for local development):
-
-```
-POSTGRES_HOST=postgres
-POSTGRES_USER=mockly
-POSTGRES_PASSWORD=<password>
-POSTGRES_DB=mockly
-POSTGRES_PORT=5432
-JWT_SECRET=<secret-key>
-GOOGLE_ANDROID_CLIENT_ID=<google-oauth-client-id>
-GOOGLE_IOS_CLIENT_ID=<google-oauth-client-id-ios> # 선택, 미설정 시 iOS 로그인만 실패
-PORTONE_API_SECRET=<portone-api-secret>
-PORTONE_WEBHOOK_SECRET=<portone-webhook-secret>
-PORTONE_STORE_ID=<portone-store-id>
-PORTONE_CHANNEL_KEY=<portone-channel-key>
-```
-
-## Key Implementation Details
-
-### Refresh Token Rotation
-
-When a refresh token is used:
-1. Old refresh token is validated and deleted
-2. New access token AND new refresh token are issued
-3. Maximum 2 active refresh tokens per user (oldest deleted if exceeded)
-
-This implements token rotation for security while supporting multi-device login.
-
-### JWT Configuration
-
-- Access Token: 15 minutes (900000 ms)
-- Refresh Token: 7 days (604800000 ms) - planned to extend to 30 days
-- Algorithm: HS512
-- Stored in: `JwtProperties` class from `application.yaml`
-
-### Payment System Architecture
-
-- **Transactional Outbox Pattern**: PortOne schedule creation requests are persisted to DB first, then processed asynchronously to ensure at-least-once delivery
-- **Webhook Verification**: PortOne webhook signature validation prevents unauthorized requests
-- **Idempotency**: DB-based duplicate prevention + 409 error handling for PortOne schedule creation
-- **Scheduled Jobs**: PAST_DUE expiration (daily 3 AM), Outbox event retry (every 60s)
-
-### Docker Build Behavior
-
-The `Dockerfile` uses multi-stage build:
-1. Build stage: Runs `./gradlew clean build` which executes tests and generates docs
-2. Runtime stage: Uses OpenJDK 21 slim image with built JAR
-
-**Critical**: The build must run tests to generate REST Docs snippets in `build/generated-snippets/` before `openapi3` task can generate the OpenAPI spec.
-
-## Common Patterns
-
-### Creating New Endpoints
-
-1. Add controller method with Spring REST Docs test
-2. Create docs class in `src/test/java/app/mockly/domain/*/controller/docs/`
-3. Define request/response fields using `ApiResponseDocs` helpers
-4. Run `./gradlew clean build` to regenerate OpenAPI spec
-5. Verify in Swagger UI at `http://localhost:8080/swagger-ui.html` (dev profile)
-
-### Adding New Domains
-
-Follow the existing structure:
-```
-domain/<domain-name>/
-├── controller/
-├── dto/
-├── entity/
-├── repository/
-└── service/
-```
-
-Place domain-specific exceptions in `global/exception/` and register in `GlobalExceptionHandler`.
-
-## Commit Message Convention
-
-**커밋은 항상 사용자가 직접 한다. Codex는 커밋 메시지를 추천만 하고, 절대 직접 커밋하지 않는다.**
-
-커밋 메시지 추천 시 subject와 description을 함께 제안한다.
-
-This project uses Korean commit messages with the following format:
-
-```
-[type] 간결한 커밋 메시지 (50자 이내)
-
-- 변경 내용 설명 (선택 사항)
-- 설계 결정이나 이유가 있으면 포함
-```
-
-### Commit Types
-
-- `feat` - 새로운 기능 추가
-- `fix` - 버그 수정
-- `refactor` - 리팩터링 (기능 변화 없음)
-- `test` - 테스트 코드 추가/수정
-- `docs` - 문서 수정
-- `style` - 코드 스타일 수정 (포맷팅)
-- `chore` - 빌드/설정 관련
-- `perf` - 성능 개선
-- `ci` - CI/CD 설정
-- `build` - 빌드 시스템 변경
-
-### Examples
-
-```
-[feat] 세션 상세 조회 API 구현
-
-- GET /api/interviews/:sessionId 엔드포인트 추가
-- 세션 메타정보 및 전체 대화 내역(messages) 반환
-- 컨트롤러 테스트 및 REST Docs 추가
-```
-
-## Code Review Standards
-
-When reviewing backend code, focus on:
-
-### 1. Code Quality
-
-- Single Responsibility Principle (SRP)
-- Consistent naming conventions
-- DRY principle (avoid duplication)
-- Appropriate abstraction levels
-
-### 2. API Design
-
-- RESTful conventions
-- Proper HTTP methods and status codes
-- API versioning strategy
-- Pagination implementation
-
-### 3. Security
-
-- SQL injection prevention (use JPA/parameterized queries)
-- OAuth 2.1 + PKCE implementation correctness
-- JWT validation and refresh token handling
-- Input validation (Bean Validation)
-- CORS configuration
-- No sensitive data (API keys, tokens, billing keys) in logs or responses
-- Webhook signature verification for external integrations
-
-### 4. Database
-
-- Query optimization (avoid N+1 problems with JOIN FETCH)
-- Proper indexing
-- Transaction management (`@Transactional` scope)
-- Data integrity constraints
-- Use appropriate primary key types (UUID for user data, Integer for static data)
-
-### 5. Error Handling
-
-- Proper exception handling with try-catch
-- Comprehensive error logging
-- User-friendly error messages (hide internal details)
-- Transaction rollback considerations (don't mark entities as failed then throw exception - state won't persist)
-
-### 6. Performance
-
-- Database query performance
-- Caching strategy (consider Redis integration)
-- Async processing where appropriate (Outbox pattern for external API calls)
-- Connection pooling
-- Client timeout configuration for external API calls
-
-### 7. Testing
-
-- Unit test coverage for services
-- Integration tests for endpoints
-- Edge case handling
-- Mock external dependencies (PortOne, Google OAuth)
-- Test security flows
-
-## Important Development Practices
-
-- Always use the Gradle wrapper (`./gradlew`) instead of global Gradle
-- Run tests before committing (`./gradlew test`)
-- Use Lombok annotations to reduce boilerplate
-- Leverage Spring Boot DevTools for rapid development
-- Document REST APIs with Spring REST Docs
-- Keep business logic in service layer, not controllers
-- Use DTOs for API requests/responses, not entities directly
-- Controller에서 직접 사용하는 request/response DTO는 HTTP 동사를 접두사로 사용: `GetXXXRequest`, `GetXXXResponse`, `CreateXXXRequest`, `CreateXXXResponse`, `DeleteXXXRequest` 등
-- Mock external API calls in tests
-- Never log sensitive information (billing keys, tokens, passwords)
-- Use JSON libraries (ObjectMapper) for JSON construction, never String.format
-- Apply proper transaction boundaries - don't modify entities then throw exceptions in same transaction
-- Use idempotency keys or DB constraints to prevent duplicate operations
-
-## Commit Message Recommendations
-
-When a task reaches a commit-worthy checkpoint, include a recommended commit message in the final response.
-
-- Match the recent repository commit style.
-- Use this default format:
+- 커밋은 사용자가 직접 한다. Codex는 절대 `git commit` 또는 push하지 않는다.
+- 커밋 제안은 최근 저장소 형식에 맞춰 subject, 본문, 포함 파일, 검증 결과를 함께 제공한다.
 
 ```text
-<type>: <short summary>
+<type>: <짧은 요약>
 
-- <change 1>
-- <change 2>
-- <test or verification>
+- 변경 내용
+- 검증 결과
 ```
 
-- Choose `feat`, `fix`, `refactor`, `test`, `docs`, or `chore` based on the actual change.
-- If the work contains multiple logical commit units, suggest splitting the commit and provide one message per unit.
-- Do not create the commit unless explicitly asked.
+`feat`, `fix`, `refactor`, `test`, `docs`, `chore` 중 실제 변경 성격에 맞는 type을 사용한다.
