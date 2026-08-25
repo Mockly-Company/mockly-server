@@ -28,6 +28,9 @@ class FlywaySchemaMigrationTest {
             assertThat(tableExists(metaData, "plan_price")).isFalse();
             assertThat(columnExists(metaData, "subscription_product", "weekly_interview_limit")).isTrue();
             assertThat(columnExists(metaData, "subscription_product", "weekly_improvement_practice_limit")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "past_due_at")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "current_marker")).isTrue();
+            assertThat(indexExists(metaData, "subscription", "uk_subscription_current_user")).isTrue();
             assertThat(tableExists(metaData, "interview_quota")).isFalse();
             assertThat(tableExists(metaData, "payment_checkout")).isFalse();
 
@@ -59,6 +62,17 @@ class FlywaySchemaMigrationTest {
     private boolean columnExists(DatabaseMetaData metaData, String tableName, String columnName) throws Exception {
         try (ResultSet columns = metaData.getColumns(null, null, tableName, columnName)) {
             return columns.next();
+        }
+    }
+
+    private boolean indexExists(DatabaseMetaData metaData, String tableName, String indexName) throws Exception {
+        try (ResultSet indexes = metaData.getIndexInfo(null, null, tableName, true, false)) {
+            while (indexes.next()) {
+                if (indexName.equalsIgnoreCase(indexes.getString("INDEX_NAME"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

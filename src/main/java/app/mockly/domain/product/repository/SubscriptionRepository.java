@@ -24,11 +24,10 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     @Query("""
             SELECT s FROM Subscription s
                 JOIN FETCH s.subscriptionPlan sp
-            WHERE s.userId = :userId
-                AND sp.id = :planId
-                AND s.status = :status
+                JOIN FETCH sp.product p
+            WHERE s.userId = :userId AND s.currentMarker = true
             """)
-    Optional<Subscription> findByUserIdAndPlanIdAndStatus(UUID userId, Integer planId, SubscriptionStatus status);
+    Optional<Subscription> findCurrentByUserId(UUID userId);
 
-    List<Subscription> findByStatusAndUpdatedAtBefore(SubscriptionStatus status, Instant cutoff);
+    List<Subscription> findByStatusAndPastDueAtLessThanEqual(SubscriptionStatus status, Instant cutoff);
 }

@@ -42,8 +42,10 @@ public class SubscriptionDocs {
             fieldWithPath("startedAt").description("구독 시작 시각").type(SimpleType.STRING),
             fieldWithPath("currentPeriodStart").description("현재 결제 주기 시작").type(SimpleType.STRING),
             fieldWithPath("currentPeriodEnd").description("현재 결제 주기 종료").type(SimpleType.STRING),
-            fieldWithPath("nextBillingDate").description("다음 결제일").type(SimpleType.STRING),
-            fieldWithPath("nextBillingAmount").description("다음 결제 금액").type(SimpleType.NUMBER),
+            fieldWithPath("pastDueAt").description("최초 갱신 결제 실패 시각 (ACTIVE이면 미포함)").type(SimpleType.STRING).optional(),
+            fieldWithPath("gracePeriodEndsAt").description("연체 유예 종료 시각 (ACTIVE이면 미포함)").type(SimpleType.STRING).optional(),
+            fieldWithPath("nextBillingDate").description("다음 결제일 (PAST_DUE, UNPAID이면 미포함)").type(SimpleType.STRING).optional(),
+            fieldWithPath("nextBillingAmount").description("다음 결제 금액 (PAST_DUE, UNPAID이면 미포함)").type(SimpleType.NUMBER).optional(),
             fieldWithPath("planSnapshot").description("플랜 스냅샷").type(JsonFieldType.OBJECT),
             fieldWithPath("planSnapshot.id").description("플랜 ID").type(JsonFieldType.NUMBER),
             fieldWithPath("planSnapshot.name").description("상품명").type(SimpleType.STRING),
@@ -91,7 +93,7 @@ public class SubscriptionDocs {
         return ResourceSnippetParameters.builder()
                 .tag("Subscription")
                 .summary("내 구독 조회")
-                .description("ACTIVE 구독을 우선 조회하고, 없으면 PAST_DUE 구독 정보를 조회합니다.")
+                .description("현재 ACTIVE, PAST_DUE 또는 UNPAID 구독 정보를 조회합니다.")
                 .requestHeaders(REQUEST_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(GET_RESPONSE_FIELDS))
                 .build();

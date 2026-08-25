@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
@@ -234,6 +235,22 @@ class SubscriptionProductControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.products[2].plans[0].isActive").value(true))
                 .andExpect(jsonPath("$.data.products[?(@.plans[0].isActive == true)]", org.hamcrest.Matchers.hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("GET /api/subscription-products - UNPAID 구독은 활성 플랜으로 표시하지 않음")
+    void getProducts_UnpaidSubscription() throws Exception {
+        Subscription subscription = Subscription.create(testUser.getId(), proMonthlyPlan);
+        subscription.activate();
+        subscription.markAsPastDue(Instant.parse("2026-08-01T00:00:00Z"));
+        subscription.markAsUnpaid();
+        subscriptionRepository.save(subscription);
+
+        mockMvc.perform(get("/api/subscription-products")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.products[?(@.plans[0].isActive == true)]", org.hamcrest.Matchers.hasSize(0)));
     }
 
 }

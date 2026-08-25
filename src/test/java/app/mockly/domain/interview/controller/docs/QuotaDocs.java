@@ -38,4 +38,11 @@ public class QuotaDocs {
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))
                 .build();
     }
+
+    public static ResourceSnippetParameters subscriptionUnpaid() {
+        return ResourceSnippetParameters.builder()
+                .tag("Interview")
+                .responseFields(ApiResponseDocs.errorResponse("SUBSCRIPTION_UNPAID"))
+                .build();
+    }
 }

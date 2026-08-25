@@ -2,9 +2,7 @@ package app.mockly.domain.product.service;
 
 import app.mockly.domain.product.dto.response.GetSubscriptionProductsResponse;
 import app.mockly.domain.product.entity.SubscriptionProduct;
-import app.mockly.domain.product.entity.SubscriptionStatus;
 import app.mockly.domain.product.repository.SubscriptionProductRepository;
-import app.mockly.domain.product.repository.SubscriptionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +15,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SubscriptionProductService {
-    private final SubscriptionRepository subscriptionRepository;
+    private final CurrentSubscriptionService currentSubscriptionService;
     private final SubscriptionProductRepository subscriptionProductRepository;
 
     public GetSubscriptionProductsResponse getAllSubscriptionProducts(UUID userId) {
@@ -25,8 +23,8 @@ public class SubscriptionProductService {
 
         Integer activePlanId = null;
         if (userId != null) {
-            activePlanId = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                    .or(() -> subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.PAST_DUE))
+            activePlanId = currentSubscriptionService.findCurrentSubscription(userId)
+                    .filter(subscription -> subscription.isActive() || subscription.isPastDue())
                     .map(subscription -> subscription.getSubscriptionPlan().getId())
                     .orElse(null);
         }

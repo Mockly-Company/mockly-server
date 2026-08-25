@@ -21,6 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -116,5 +117,58 @@ class SubscriptionServiceTest {
                 .filter(subscription -> subscription.getStatus() == SubscriptionStatus.ACTIVE)
                 .count();
         assertThat(activeCount).isEqualTo(1);
+    }
+
+    @Test
+    void assignFreePlan_doesNotReplaceAnUnpaidCurrentSubscription() {
+        User user = userRepository.save(User.builder()
+                .provider(OAuth2Provider.GOOGLE)
+                .providerId("unpaid-subscription-provider-id")
+                .email("unpaid-subscription@example.com")
+                .name("미납 구독 사용자")
+                .build());
+
+        SubscriptionProduct basicProduct = productRepository.save(SubscriptionProduct.builder()
+                .name("Basic unpaid")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .maxQuestions(5)
+                .weeklyInterviewLimit(4)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        SubscriptionPlan basicPlan = planRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(new BigDecimal("5900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription existing = Subscription.create(user.getId(), basicPlan);
+        existing.activate();
+        existing.markAsPastDue(Instant.parse("2026-08-01T00:00:00Z"));
+        existing.markAsUnpaid();
+        subscriptionRepository.save(existing);
+
+        SubscriptionProduct freeProduct = productRepository.save(SubscriptionProduct.builder()
+                .name("Free for unpaid guard")
+                .planTier(PlanTier.FREE)
+                .isActive(true)
+                .maxQuestions(3)
+                .weeklyInterviewLimit(1)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        planRepository.save(SubscriptionPlan.builder()
+                .product(freeProduct)
+                .price(BigDecimal.ZERO)
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+
+        subscriptionService.assignFreePlan(user.getId());
+
+        assertThat(subscriptionRepository.findAll())
+                .filteredOn(subscription -> subscription.getUserId().equals(user.getId()))
+                .singleElement()
+                .extracting(Subscription::getStatus)
+                .isEqualTo(SubscriptionStatus.UNPAID);
     }
 }

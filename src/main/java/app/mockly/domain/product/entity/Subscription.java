@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Entity
@@ -14,6 +16,8 @@ import java.util.UUID;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "subscription")
 public class Subscription extends BaseEntity {
+    private static final int GRACE_PERIOD_DAYS = 7;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -41,6 +45,12 @@ public class Subscription extends BaseEntity {
     @Column(name = "cancelled_at")
     private LocalDateTime canceledAt;
 
+    @Column(name = "past_due_at")
+    private Instant pastDueAt;
+
+    @Column(name = "current_marker")
+    private Boolean currentMarker;
+
     @Setter
     @Column(name = "current_payment_schedule_id")
     private String currentPaymentScheduleId;
@@ -50,11 +60,14 @@ public class Subscription extends BaseEntity {
                 .userId(userId)
                 .subscriptionPlan(subscriptionPlan)
                 .status(SubscriptionStatus.PENDING)
+                .currentMarker(true)
                 .build();
     }
 
     public void activate() {
         this.status = SubscriptionStatus.ACTIVE;
+        this.pastDueAt = null;
+        this.currentMarker = true;
         LocalDateTime now = LocalDateTime.now();
         this.startedAt = now;
         this.currentPeriodStart = now;
@@ -72,10 +85,36 @@ public class Subscription extends BaseEntity {
     public void cancel() {
         this.status = SubscriptionStatus.CANCELED;
         this.canceledAt = LocalDateTime.now();
+        this.currentMarker = null;
     }
 
     public void markAsPastDue() {
+        markAsPastDue(Instant.now());
+    }
+
+    public void markAsPastDue(Instant occurredAt) {
         this.status = SubscriptionStatus.PAST_DUE;
+        if (this.pastDueAt == null) {
+            this.pastDueAt = occurredAt;
+        }
+        this.currentMarker = true;
+    }
+
+    public Instant getGracePeriodEndsAt() {
+        if (pastDueAt == null) {
+            return null;
+        }
+        return pastDueAt.plus(GRACE_PERIOD_DAYS, ChronoUnit.DAYS);
+    }
+
+    public boolean isGracePeriodExpired(Instant now) {
+        Instant gracePeriodEndsAt = getGracePeriodEndsAt();
+        return gracePeriodEndsAt != null && !now.isBefore(gracePeriodEndsAt);
+    }
+
+    public void markAsUnpaid() {
+        this.status = SubscriptionStatus.UNPAID;
+        this.currentMarker = true;
     }
 
     public boolean isActive() {
@@ -90,8 +129,17 @@ public class Subscription extends BaseEntity {
         return status == SubscriptionStatus.PAST_DUE;
     }
 
+    public boolean isUnpaid() {
+        return status == SubscriptionStatus.UNPAID;
+    }
+
+    public boolean isCurrent() {
+        return Boolean.TRUE.equals(currentMarker);
+    }
+
     public void expire() {
         this.status = SubscriptionStatus.EXPIRED;
+        this.currentMarker = null;
     }
 
     public void extendPeriod() {

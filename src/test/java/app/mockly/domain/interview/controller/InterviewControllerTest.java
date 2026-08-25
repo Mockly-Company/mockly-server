@@ -35,8 +35,10 @@ import app.mockly.domain.product.entity.Currency;
 import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.domain.product.entity.SubscriptionPlan;
 import app.mockly.domain.product.entity.SubscriptionProduct;
+import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.repository.SubscriptionPlanRepository;
 import app.mockly.domain.product.repository.SubscriptionProductRepository;
+import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +58,8 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import java.util.List;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -117,8 +121,12 @@ class InterviewControllerTest {
     @Autowired
     private SubscriptionPlanRepository subscriptionPlanRepository;
 
+    @Autowired
+    private SubscriptionRepository subscriptionRepository;
+
     private User testUser;
     private String validAccessToken;
+    private Subscription currentSubscription;
 
     @BeforeEach
     void setUp() {
@@ -155,13 +163,59 @@ class InterviewControllerTest {
                 .weeklyInterviewLimit(1)
                 .weeklyImprovementPracticeLimit(0)
                 .build());
-        subscriptionPlanRepository.save(SubscriptionPlan.builder()
+        SubscriptionPlan freePlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
                 .product(freeProduct)
                 .price(BigDecimal.ZERO)
                 .currency(Currency.KRW)
                 .billingCycle(BillingCycle.MONTHLY)
                 .build());
+        currentSubscription = Subscription.create(testUser.getId(), freePlan);
+        currentSubscription.activate();
+        currentSubscription = subscriptionRepository.save(currentSubscription);
 
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 실패: 미납 구독은 모든 면접 API 이용 정지 (402)")
+    void getQuota_unpaidSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        currentSubscription.markAsUnpaid();
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"))
+                .andDo(document("interview-get-quota-subscription-unpaid",
+                        resource(QuotaDocs.subscriptionUnpaid())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews - 실패: 유예기간이 끝난 PAST_DUE도 즉시 이용 정지 (402)")
+    void getSessions_expiredPastDueSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 실패: 결제 확정 전 PENDING 구독에는 권한을 부여하지 않음")
+    void getQuota_pendingSubscription() throws Exception {
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        subscriptionRepository.save(Subscription.create(testUser.getId(), currentSubscription.getSubscriptionPlan()));
+
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test

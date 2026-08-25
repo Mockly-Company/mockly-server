@@ -22,6 +22,9 @@ public enum ApiStatusCode {
     EXPIRED_TOKEN(401, "EXPIRED_TOKEN", "만료된 토큰입니다"),
     INVALID_GOOGLE_TOKEN(401, "INVALID_GOOGLE_TOKEN", "Google 토큰 검증에 실패했습니다"),
 
+    // 402: 구독 결제 필요
+    SUBSCRIPTION_UNPAID(402, "SUBSCRIPTION_UNPAID", "결제 문제로 서비스 이용이 정지되었습니다."),
+
     // 403: 권한 오류
     FORBIDDEN(403, "FORBIDDEN", "접근 권한이 없습니다"),
 
@@ -30,7 +33,7 @@ public enum ApiStatusCode {
     RESOURCE_NOT_FOUND(404, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다"),
 
     // 429: 요청 제한
-    QUOTA_EXCEEDED(429, "QUOTA_EXCEEDED", "일일 사용 한도를 초과했습니다"),
+    QUOTA_EXCEEDED(429, "QUOTA_EXCEEDED", "주간 사용 한도를 초과했습니다"),
 
     // 500: 서버 오류
     INTERNAL_SERVER_ERROR(500, "INTERNAL_SERVER_ERROR", "서버 내부 오류가 발생했습니다"),

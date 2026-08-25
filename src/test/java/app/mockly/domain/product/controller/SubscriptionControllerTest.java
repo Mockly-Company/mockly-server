@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
@@ -233,7 +234,8 @@ class SubscriptionControllerTest {
     void getSubscription_PastDue() throws Exception {
         Subscription subscription = Subscription.create(testUser.getId(), basicMonthlyPlan);
         subscription.activate();
-        subscription.markAsPastDue();
+        Instant pastDueAt = Instant.parse("2026-08-25T03:00:00Z");
+        subscription.markAsPastDue(pastDueAt);
         subscription = subscriptionRepository.save(subscription);
 
         mockMvc.perform(get("/api/subscriptions")
@@ -241,7 +243,30 @@ class SubscriptionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(subscription.getId()))
-                .andExpect(jsonPath("$.data.status").value("PAST_DUE"));
+                .andExpect(jsonPath("$.data.status").value("PAST_DUE"))
+                .andExpect(jsonPath("$.data.pastDueAt").value("2026-08-25T03:00:00Z"))
+                .andExpect(jsonPath("$.data.gracePeriodEndsAt").value("2026-09-01T03:00:00Z"))
+                .andExpect(jsonPath("$.data.nextBillingDate").doesNotExist())
+                .andExpect(jsonPath("$.data.nextBillingAmount").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/subscriptions - 성공: UNPAID 구독 조회")
+    void getSubscription_Unpaid() throws Exception {
+        Subscription subscription = Subscription.create(testUser.getId(), basicMonthlyPlan);
+        subscription.activate();
+        subscription.markAsPastDue(Instant.parse("2026-08-10T03:00:00Z"));
+        subscription.markAsUnpaid();
+        subscription = subscriptionRepository.save(subscription);
+
+        mockMvc.perform(get("/api/subscriptions")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(subscription.getId()))
+                .andExpect(jsonPath("$.data.status").value("UNPAID"))
+                .andExpect(jsonPath("$.data.nextBillingDate").doesNotExist())
+                .andExpect(jsonPath("$.data.nextBillingAmount").doesNotExist());
     }
 
     @Test
@@ -257,6 +282,18 @@ class SubscriptionControllerTest {
                 .andDo(document("subscription-get-not-found",
                         resource(SubscriptionDocs.getNotFound())
                 ));
+    }
+
+    @Test
+    @DisplayName("GET /api/subscriptions - 실패: 결제 확정 전 PENDING 구독은 현재 구독으로 노출하지 않음")
+    void getSubscription_PendingSubscription() throws Exception {
+        subscriptionRepository.save(Subscription.create(testUser.getId(), basicMonthlyPlan));
+
+        mockMvc.perform(get("/api/subscriptions")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test

@@ -6,13 +6,10 @@ import app.mockly.domain.interview.dto.WeeklyQuotaContext;
 import app.mockly.domain.interview.entity.QuotaType;
 import app.mockly.domain.interview.entity.QuotaUsage;
 import app.mockly.domain.interview.repository.QuotaUsageRepository;
-import app.mockly.domain.product.entity.BillingCycle;
-import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.entity.SubscriptionProduct;
 import app.mockly.domain.product.entity.SubscriptionStatus;
-import app.mockly.domain.product.repository.SubscriptionPlanRepository;
-import app.mockly.domain.product.repository.SubscriptionRepository;
+import app.mockly.domain.product.service.CurrentSubscriptionService;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import java.time.Instant;
@@ -30,8 +27,7 @@ public class WeeklyQuotaService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    private final SubscriptionRepository subscriptionRepository;
-    private final SubscriptionPlanRepository subscriptionPlanRepository;
+    private final CurrentSubscriptionService currentSubscriptionService;
     private final QuotaUsageRepository quotaUsageRepository;
 
     public GetQuotaResponse getQuota(User user) {
@@ -43,8 +39,8 @@ public class WeeklyQuotaService {
     }
 
     public WeeklyQuotaContext calculateCurrentQuotaContext(User user, Instant now) {
-        Subscription subscription = findCurrentSubscription(user.getId());
-        SubscriptionProduct product = findQuotaProduct(subscription);
+        Subscription subscription = currentSubscriptionService.getCurrentSubscription(user.getId());
+        SubscriptionProduct product = subscription.getSubscriptionPlan().getProduct();
         LocalDate quotaCycleAnchorDate = findQuotaCycleAnchorDate(subscription, user);
         LocalDate today = now.atZone(KST).toLocalDate();
         long elapsedDays = Math.max(0, ChronoUnit.DAYS.between(quotaCycleAnchorDate, today));
@@ -77,37 +73,16 @@ public class WeeklyQuotaService {
                 .orElse(0);
     }
 
-    private Subscription findCurrentSubscription(UUID userId) {
-        return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .orElseGet(() -> subscriptionRepository
-                        .findByUserIdAndStatus(userId, SubscriptionStatus.PAST_DUE)
-                        .orElse(null));
-    }
-
-    private SubscriptionProduct findQuotaProduct(Subscription subscription) {
-        if (subscription != null) {
-            return subscription.getSubscriptionPlan().getProduct();
-        }
-
-        return subscriptionPlanRepository.findActiveByPlanTierAndBillingCycle(PlanTier.FREE, BillingCycle.MONTHLY)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "Free 플랜 설정을 찾을 수 없습니다."))
-                .getProduct();
-    }
-
     private LocalDate findQuotaCycleAnchorDate(Subscription subscription, User user) {
-        if (subscription == null) {
-            return user.getCreatedAt().atZone(KST).toLocalDate();
-        }
-
         return toKstDate(subscription.getCurrentPeriodStart(), user.getCreatedAt());
     }
 
     private boolean isAvailableForPeriod(Subscription subscription, LocalDate periodStart) {
-        if (subscription == null || subscription.getStatus() != SubscriptionStatus.PAST_DUE) {
+        if (subscription.getStatus() != SubscriptionStatus.PAST_DUE) {
             return true;
         }
 
-        return !periodStart.atStartOfDay(KST).toInstant().isAfter(subscription.getUpdatedAt());
+        return !periodStart.atStartOfDay(KST).toInstant().isAfter(subscription.getPastDueAt());
     }
 
     private LocalDate toKstDate(LocalDateTime periodStart, Instant fallback) {
