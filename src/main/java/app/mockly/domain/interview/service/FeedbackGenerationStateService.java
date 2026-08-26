@@ -10,9 +10,6 @@ import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
-import app.mockly.domain.product.entity.PlanTier;
-import app.mockly.domain.product.entity.SubscriptionStatus;
-import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -28,15 +25,14 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class FeedbackTransactionHelper {
+public class FeedbackGenerationStateService {
 
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
     private final InterviewFeedbackRepository interviewFeedbackRepository;
-    private final SubscriptionRepository subscriptionRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<FeedbackContext> markGeneratingAndLoadContext(UUID sessionId, UUID userId) {
+    public Optional<FeedbackContext> start(UUID sessionId) {
         int updatedRows = interviewSessionRepository.markFeedbackGeneratingIfPending(
                 sessionId, FeedbackStatus.PENDING, FeedbackStatus.GENERATING, Instant.now());
         if (updatedRows == 0) {
@@ -49,19 +45,17 @@ public class FeedbackTransactionHelper {
         InterviewSession session = interviewSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
 
-        PlanTier planTier = subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .map(sub -> sub.getSubscriptionPlan().getProduct().getPlanTier())
-                .orElse(PlanTier.FREE);
         FeedbackGenerationContext genCtx = new FeedbackGenerationContext(
                 interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId),
                 session.getInterviewType(),
-                planTier
+                session.getFeedbackGenerationTier(),
+                session.getTotalQuestions()
         );
         return Optional.of(new FeedbackContext(genCtx, session.getFeedbackStatus()));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<FeedbackStatus> saveFeedbackAndComplete(UUID sessionId, InterviewFeedbackResult result, String serializedExperts) {
+    public Optional<FeedbackStatus> complete(UUID sessionId, InterviewFeedbackResult result) {
         Instant now = Instant.now();
         int updatedRows = interviewSessionRepository.completeFeedbackIfGenerating(
                 sessionId,
@@ -75,15 +69,10 @@ public class FeedbackTransactionHelper {
         }
 
         try {
-            InterviewSession session = interviewSessionRepository.getReferenceById(sessionId);
+            InterviewSession session = interviewSessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
             interviewFeedbackRepository.saveAndFlush(InterviewFeedback.create(
-                    session,
-                    result.overallScore(),
-                    serializedExperts,
-                    result.strengths(),
-                    result.improvements(),
-                    result.detailedAnalysis()
-            ));
+                    session, result, session.getFeedbackGenerationTier()));
             return Optional.of(FeedbackStatus.COMPLETED);
         } catch (Exception e) {
             throw new FeedbackCompletionException("피드백 완료 저장 실패", e);
@@ -91,7 +80,7 @@ public class FeedbackTransactionHelper {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FeedbackStatus markFailed(UUID sessionId, String reason) {
+    public FeedbackStatus fail(UUID sessionId, String reason) {
         return interviewSessionRepository.findById(sessionId)
                 .map(session -> {
                     session.markFeedbackFailed(reason);

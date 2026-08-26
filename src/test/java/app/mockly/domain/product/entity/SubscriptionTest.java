@@ -9,6 +9,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class SubscriptionTest {
+    @Test
+    void activateRecordsAnInstantForHistoryComparisons() {
+        Subscription subscription = paidSubscription();
+
+        assertThat(subscription.getActivatedAt()).isNotNull();
+    }
 
     @Test
     void markAsPastDue_recordsTheFirstFailureAndCalculatesSevenDayGracePeriod() {

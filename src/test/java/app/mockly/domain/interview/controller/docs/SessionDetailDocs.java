@@ -8,6 +8,7 @@ import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import static com.epages.restdocs.apispec.ResourceDocumentation.headerWithName;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
@@ -18,7 +19,7 @@ public class SessionDetailDocs {
             headerWithName("Authorization").description("Bearer {accessToken}")
     );
 
-    private static final List<FieldDescriptor> RESPONSE_FIELDS = List.of(
+    private static final List<FieldDescriptor> RESPONSE_FIELDS = Stream.concat(List.of(
             fieldWithPath("sessionId").description("세션 ID").type(SimpleType.STRING),
             fieldWithPath("position").description("지원 포지션").type(SimpleType.STRING),
             fieldWithPath("experienceLevel").description("경력 수준 (JUNIOR, MID, SENIOR)").type(SimpleType.STRING),
@@ -37,16 +38,8 @@ public class SessionDetailDocs {
             fieldWithPath("messages[].content").description("메시지 내용").type(SimpleType.STRING),
             fieldWithPath("messages[].questionNumber").description("질문 번호").type(SimpleType.NUMBER).optional(),
             fieldWithPath("messages[].createdAt").description("메시지 생성 시각 (ISO-8601)").type(SimpleType.STRING),
-            fieldWithPath("feedback").description("AI 피드백 (완료된 세션에만 존재)").type(JsonFieldType.OBJECT).optional(),
-            fieldWithPath("feedback.overallScore").description("종합 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks").description("전문가별 평가 목록").type(JsonFieldType.ARRAY).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].expertRole").description("전문가 역할").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].score").description("전문가 평가 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].evaluation").description("전문가 평가 내용").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.strengths").description("전반적인 강점").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.improvements").description("전반적인 개선점").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.detailedAnalysis").description("질문별 상세 분석 (PRO 플랜 전용)").type(SimpleType.STRING).optional()
-    );
+            fieldWithPath("feedback").description("AI 피드백 (완료된 세션에만 존재)").type(JsonFieldType.OBJECT).optional()
+    ).stream(), StructuredFeedbackDocs.optionalFields("feedback").stream()).toList();
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()

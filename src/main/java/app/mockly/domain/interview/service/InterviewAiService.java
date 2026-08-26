@@ -202,19 +202,20 @@ public class InterviewAiService {
 
     public InterviewFeedbackResult generateFeedback(List<InterviewMessage> history, InterviewType interviewType, PlanTier plan) {
         String systemPrompt = """
-                당신은 면접 평가 시스템입니다. 면접이 끝난 후 지원자의 답변을 전문가 관점에서 평가합니다.
-                [종합 점수]
-                overallScore는 전체 면접을 종합적으로 평가한 독립 점수입니다 (1~100).
-                전문가 점수의 단순 평균이 아니라, 면접 전반의 역량을 종합 판단하세요.
+                당신은 면접 평가 시스템입니다. 지원자의 답변만 근거로 구조화된 피드백을 생성하세요.
 
-                [전문가 평가]
-                아래 전문가별로 각 파라미터를 1~100으로 내부 평가한 뒤, 가중 평균으로 score를 산출하세요.
-                evaluation에는 해당 전문가 관점의 구체적인 평가 내용을 2~3문장으로 작성하세요.
+                [공통 평가]
+                - overallScore와 scores의 네 항목은 모두 1~100 정수입니다.
+                - structure: 답변 구조, specificity: 구체성, jobRelevance: 직무 연관성, clarity: 전달 명확성입니다.
+                - coachBrief.summary는 200자 이내의 핵심 한 문장입니다.
+                - questionNumber는 실제 면접 질문 번호 안에서 선택합니다.
+                - quote는 지원자가 실제로 말한 답변의 일부를 그대로 인용합니다.
+                - title은 120자, 개선점 summary는 200자 이내로 작성합니다.
+                - sortOrder와 rank는 1부터 중복 없이 순서대로 사용합니다.
 
+                [플랜별 출력 계약]
                 %s
-
-                %s
-                """.formatted(buildExpertPrompt(plan), buildDetailedAnalysisGuide(plan));
+                """.formatted(buildStructuredFeedbackGuide(plan));
 
         String userPrompt = """
                 면접 유형: %s
@@ -246,50 +247,28 @@ public class InterviewAiService {
         }
     }
 
-    private String buildExpertPrompt(PlanTier plan) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("""
-                --- 기술 면접관 (expertRole: "기술 면접관") ---
-                지원자의 기술적 역량과 전문 지식 수준을 평가합니다.
-                - 기술적 정확성 (40%): 개념 정의, 동작 원리, 한계점의 사실적 정확도. 오개념·구버전 지식 포함 시 감점.
-                - 이해의 깊이 (35%): "왜 그런가"를 설명하는 능력. 개념 간 연관성, trade-off 인식, 엣지 케이스 고려.
-                - 실무 적용력 (25%): 실제 프로젝트 사례 인용, 프로덕션 제약조건 고려, 기술 선택 근거 제시.
-                score = 정확성 × 0.4 + 깊이 × 0.35 + 실무적용력 × 0.25
-                """);
-
-        if (plan != PlanTier.FREE) {
-            sb.append("""
-
-                    --- 커뮤니케이션 전문가 (expertRole: "커뮤니케이션 전문가") ---
-                    지원자의 의사소통 능력과 답변 전달 품질을 평가합니다.
-                    - 논리적 구조 (40%): 두괄식/STAR 등 명확한 프레임 사용, 주장→근거→결론 흐름의 자연스러움.
-                    - 표현의 명확성 (35%): 전문 용어의 적절한 사용, 모호하지 않은 표현, 핵심을 짚는 간결함.
-                    - 설득력 (25%): 면접관에게 신뢰감과 역량을 전달하는 능력. 근거 있는 주장, 적절한 예시 배치.
-                    score = 구조 × 0.4 + 명확성 × 0.35 + 설득력 × 0.25
-                    """);
+    private String buildStructuredFeedbackGuide(PlanTier plan) {
+        if (plan == PlanTier.FREE) {
+            return """
+                    strengths는 빈 배열로 설정합니다.
+                    improvements는 rank 1인 항목 한 건만 생성하고 title과 summary만 작성합니다.
+                    coachBrief.keyStrength, coachBrief.keyImprovement, improvement.detail, improvement.quote,
+                    nextPracticePoint는 모두 null로 설정합니다.
+                    """;
         }
-
-        if (plan == PlanTier.PRO) {
-            sb.append("""
-
-                    --- 면접 코치 (expertRole: "면접 코치") ---
-                    면접 수행 능력 자체를 메타 관점에서 평가합니다.
-                    - 답변 구체성 (40%): 구체적 사례·수치·결과 제시 여부. STAR 프레임 활용도.
-                    - 상황 대처력 (35%): 모르는 질문이나 꼬리질문에 대한 대응 품질. 솔직한 인정 + 사고 과정 공유.
-                    - 성장 가능성 (25%): 자기 인식, 학습 의지, 실패에서 배운 점, 새로운 기술에 대한 호기심.
-                    score = 구체성 × 0.4 + 대처력 × 0.35 + 성장가능성 × 0.25
-                    """);
+        if (plan == PlanTier.BASIC) {
+            return """
+                    coachBrief의 세 필드를 모두 작성합니다.
+                    strengths는 sortOrder 1~3인 세 건, improvements는 rank 1~3인 세 건을 생성합니다.
+                    각 항목의 detail과 quote를 모두 작성하고 nextPracticePoint는 null로 설정합니다.
+                    """;
         }
-
-        return sb.toString();
-    }
-
-    private String buildDetailedAnalysisGuide(PlanTier plan) {
-        if (plan == PlanTier.PRO) {
-            return "detailedAnalysis에 질문별 상세 분석을 작성하세요. 각 질문에 대해 답변의 강점, 약점, 개선 방향을 구체적으로 분석합니다.";
-        }
-        return "detailedAnalysis는 반드시 null로 설정하세요.";
+        return """
+                coachBrief의 세 필드를 모두 작성합니다.
+                strengths는 sortOrder 1~3인 세 건, improvements는 rank 1~3인 세 건을 생성합니다.
+                각 항목의 detail과 quote를 모두 작성합니다.
+                nextPracticePoint는 다음 면접에서 적용할 행동 한 문장으로 60자 이내로 작성합니다.
+                """;
     }
 
     private String formatHistory(List<InterviewMessage> history) {

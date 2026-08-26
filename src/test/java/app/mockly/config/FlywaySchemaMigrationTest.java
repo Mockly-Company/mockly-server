@@ -29,10 +29,24 @@ class FlywaySchemaMigrationTest {
             assertThat(columnExists(metaData, "subscription_product", "weekly_interview_limit")).isTrue();
             assertThat(columnExists(metaData, "subscription_product", "weekly_improvement_practice_limit")).isTrue();
             assertThat(columnExists(metaData, "subscription", "past_due_at")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "activated_at")).isTrue();
             assertThat(columnExists(metaData, "subscription", "current_marker")).isTrue();
             assertThat(indexExists(metaData, "subscription", "uk_subscription_current_user")).isTrue();
             assertThat(tableExists(metaData, "interview_quota")).isFalse();
             assertThat(tableExists(metaData, "payment_checkout")).isFalse();
+            assertThat(columnExists(metaData, "interview_session", "feedback_generation_tier")).isTrue();
+            assertThat(columnExists(metaData, "interview_feedback", "coach_brief_summary")).isTrue();
+            assertThat(columnExists(metaData, "interview_feedback", "score_structure")).isTrue();
+            assertThat(columnExists(metaData, "interview_feedback", "generated_tier")).isTrue();
+            assertThat(columnExists(metaData, "interview_feedback", "expert_feedbacks")).isFalse();
+            assertThat(columnExists(metaData, "interview_feedback", "strengths")).isFalse();
+            assertThat(columnExists(metaData, "interview_feedback", "improvements")).isFalse();
+            assertThat(columnExists(metaData, "interview_feedback", "detailed_analysis")).isFalse();
+            assertThat(tableExists(metaData, "feedback_strength")).isTrue();
+            assertThat(tableExists(metaData, "feedback_improvement")).isTrue();
+            assertThat(columnType(metaData, "interview_feedback", "score_structure")).isEqualTo("INTEGER");
+            assertThat(columnType(metaData, "feedback_strength", "question_number")).isEqualTo("INTEGER");
+            assertThat(columnType(metaData, "feedback_improvement", "rank")).isEqualTo("INTEGER");
 
             try (var freeLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_interview_limit
@@ -73,6 +87,13 @@ class FlywaySchemaMigrationTest {
                 }
             }
             return false;
+        }
+    }
+
+    private String columnType(DatabaseMetaData metaData, String tableName, String columnName) throws Exception {
+        try (ResultSet columns = metaData.getColumns(null, null, tableName, columnName)) {
+            assertThat(columns.next()).isTrue();
+            return columns.getString("TYPE_NAME");
         }
     }
 }

@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class InterviewCreationTransaction {
+public class InterviewCreationService {
 
     private static final List<String> GREETINGS = List.of(
             "안녕하세요, 만나서 반갑습니다.",

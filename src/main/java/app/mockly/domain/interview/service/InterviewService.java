@@ -11,9 +11,10 @@ import app.mockly.domain.interview.entity.*;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
+import app.mockly.domain.product.entity.PlanTier;
+import app.mockly.domain.product.service.CurrentSubscriptionService;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -41,9 +42,10 @@ public class InterviewService {
     private final InterviewFeedbackRepository interviewFeedbackRepository;
     private final UserRepository userRepository;
     private final InterviewAiService interviewAiService;
-    private final InterviewCreationTransaction interviewCreationTransaction;
+    private final InterviewCreationService interviewCreationService;
     private final WeeklyQuotaService weeklyQuotaService;
-    private final ObjectMapper objectMapper;
+    private final CurrentSubscriptionService currentSubscriptionService;
+    private final FeedbackVisibilityService feedbackVisibilityService;
     private final ApplicationEventPublisher eventPublisher;
 
     public CreateInterviewResponse createSession(UUID userId, CreateInterviewRequest request) {
@@ -56,7 +58,7 @@ public class InterviewService {
         String greeting = RANDOM.nextBoolean()
                 ? "안녕하세요, 만나서 반갑습니다."
                 : "안녕하세요, 오늘 면접에 참여해 주셔서 감사합니다.";
-        return interviewCreationTransaction.create(userId, request, keyword, greeting);
+        return interviewCreationService.create(userId, request, keyword, greeting);
     }
 
     @Transactional
@@ -72,8 +74,12 @@ public class InterviewService {
                 InterviewMessage.createUserMessage(session, request.content(), session.getCurrentQuestionNumber()));
 
         if (session.isAllQuestionsAnswered()) {
-            session.startFeedbackGeneration();
-            eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+            PlanTier generationTier = currentSubscriptionService.getCurrentSubscription(userId)
+                    .getSubscriptionPlan()
+                    .getProduct()
+                    .getPlanTier();
+            session.startFeedbackGeneration(generationTier);
+            eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId));
             return SubmitAnswerResponse.feedbackPending(session);
         }
 
@@ -114,7 +120,7 @@ public class InterviewService {
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND));
         List<InterviewMessage> messages = interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId);
         FeedbackDto feedback = interviewFeedbackRepository.findBySessionId(sessionId)
-                .map(f -> FeedbackDto.from(f, objectMapper))
+                .map(f -> feedbackVisibilityService.toResponse(userId, f))
                 .orElse(null);
         return GetSessionDetailResponse.from(session, messages, feedback);
     }
@@ -151,7 +157,7 @@ public class InterviewService {
             return GetFeedbackResponse.generating();
         }
         FeedbackDto feedback = interviewFeedbackRepository.findBySessionId(sessionId)
-                .map(f -> FeedbackDto.from(f, objectMapper))
+                .map(f -> feedbackVisibilityService.toResponse(userId, f))
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "피드백 데이터를 찾을 수 없습니다."));
         return GetFeedbackResponse.completed(feedback);
     }
@@ -170,7 +176,7 @@ public class InterviewService {
         }
 
         session.resetFeedbackStatus();
-        eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId, userId));
+        eventPublisher.publishEvent(new FeedbackRequestedEvent(sessionId));
         return GetFeedbackResponse.pending();
     }
 

@@ -36,8 +36,7 @@ public class StaleFeedbackRecoveryJob {
             log.warn("stuck 피드백 복구: sessionId={}, feedbackStatus={}, updatedAt={}",
                     session.getId(), session.getFeedbackStatus(), session.getUpdatedAt());
             session.resetFeedbackStatus();
-            eventPublisher.publishEvent(
-                    new FeedbackRequestedEvent(session.getId(), session.getUser().getId()));
+            eventPublisher.publishEvent(new FeedbackRequestedEvent(session.getId()));
         }
 
         if (!staleSessions.isEmpty()) {

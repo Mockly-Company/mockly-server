@@ -30,4 +30,16 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     Optional<Subscription> findCurrentByUserId(UUID userId);
 
     List<Subscription> findByStatusAndPastDueAtLessThanEqual(SubscriptionStatus status, Instant cutoff);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END
+            FROM Subscription s
+                JOIN s.subscriptionPlan sp
+                JOIN sp.product p
+            WHERE s.userId = :userId
+              AND p.planTier <> app.mockly.domain.product.entity.PlanTier.FREE
+              AND s.activatedAt IS NOT NULL
+              AND s.activatedAt >= :feedbackGenerationStartedAt
+            """)
+    boolean existsActivatedPaidSubscriptionAfter(UUID userId, Instant feedbackGenerationStartedAt);
 }

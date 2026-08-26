@@ -1,6 +1,7 @@
 package app.mockly.domain.interview.entity;
 
 import app.mockly.domain.auth.entity.User;
+import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.BaseEntity;
 import com.fasterxml.uuid.Generators;
 import jakarta.persistence.*;
@@ -59,6 +60,10 @@ public class InterviewSession extends BaseEntity {
     private String firstQuestionKeyword;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "feedback_generation_tier", length = 16)
+    private PlanTier feedbackGenerationTier;
+
+    @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private FeedbackStatus feedbackStatus;
 
@@ -86,9 +91,10 @@ public class InterviewSession extends BaseEntity {
         this.currentQuestionNumber++;
     }
 
-    public void startFeedbackGeneration() {
+    public void startFeedbackGeneration(PlanTier generationTier) {
         this.status = InterviewSessionStatus.FEEDBACK_PENDING;
         this.feedbackStatus = FeedbackStatus.PENDING;
+        this.feedbackGenerationTier = generationTier;
         if (this.endedAt == null) {
             this.endedAt = Instant.now();
         }

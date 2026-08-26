@@ -10,30 +10,39 @@ public record InterviewFeedbackResult(
         @JsonProperty(required = true, value = "overallScore")
         @JsonPropertyDescription("면접 종합 점수 (1~100)")
         int overallScore,
-        @JsonProperty(required = true, value = "expertFeedbacks")
-        @JsonPropertyDescription("전문가별 평가 목록")
-        List<ExpertFeedback> expertFeedbacks,
-        @JsonProperty(required = true, value = "strengths")
-        @JsonPropertyDescription("전반적인 강점 요약")
-        String strengths,
-        @JsonProperty(required = true, value = "improvements")
-        @JsonPropertyDescription("전반적인 개선점 요약")
-        String improvements,
-        @Nullable
-        @JsonProperty(required = true, value = "detailedAnalysis")
-        @JsonPropertyDescription("질문별 상세 분석 (PRO 플랜 전용, 그 외 플랜은 null)")
-        String detailedAnalysis
+        @JsonProperty(required = true, value = "coachBrief") CoachBrief coachBrief,
+        @JsonProperty(required = true, value = "scores") Scores scores,
+        @JsonProperty(required = true, value = "strengths") List<Strength> strengths,
+        @JsonProperty(required = true, value = "improvements") List<Improvement> improvements,
+        @Nullable @JsonProperty(required = true, value = "nextPracticePoint") String nextPracticePoint
 ) {
-    public record ExpertFeedback(
-            @JsonProperty(required = true, value = "expertRole")
-            @JsonPropertyDescription("전문가 역할 (예: 기술 면접관, 커뮤니케이션 전문가, 면접 코치)")
-            String expertRole,
-            @JsonProperty(required = true, value = "score")
-            @JsonPropertyDescription("해당 전문가 관점의 평가 점수 (1~100)")
-            int score,
-            @JsonProperty(required = true, value = "evaluation")
-            @JsonPropertyDescription("해당 전문가 관점의 평가 내용")
-            String evaluation
-    ) {
-    }
+    public record CoachBrief(
+            @JsonProperty(required = true, value = "summary") String summary,
+            @Nullable @JsonProperty(required = true, value = "keyStrength") String keyStrength,
+            @Nullable @JsonProperty(required = true, value = "keyImprovement") String keyImprovement
+    ) {}
+
+    public record Scores(
+            @JsonProperty(required = true, value = "structure") int structure,
+            @JsonProperty(required = true, value = "specificity") int specificity,
+            @JsonProperty(required = true, value = "jobRelevance") int jobRelevance,
+            @JsonProperty(required = true, value = "clarity") int clarity
+    ) {}
+
+    public record Strength(
+            @JsonProperty(required = true, value = "questionNumber") int questionNumber,
+            @JsonProperty(required = true, value = "title") String title,
+            @JsonProperty(required = true, value = "detail") String detail,
+            @JsonProperty(required = true, value = "quote") String quote,
+            @JsonProperty(required = true, value = "sortOrder") int sortOrder
+    ) {}
+
+    public record Improvement(
+            @JsonProperty(required = true, value = "rank") int rank,
+            @JsonProperty(required = true, value = "questionNumber") int questionNumber,
+            @JsonProperty(required = true, value = "title") String title,
+            @JsonProperty(required = true, value = "summary") String summary,
+            @Nullable @JsonProperty(required = true, value = "detail") String detail,
+            @Nullable @JsonProperty(required = true, value = "quote") String quote
+    ) {}
 }

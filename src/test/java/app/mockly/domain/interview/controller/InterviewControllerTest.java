@@ -67,6 +67,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static app.mockly.domain.interview.FeedbackTestFixtures.feedbackResult;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -147,13 +148,7 @@ class InterviewControllerTest {
         given(interviewAiService.generateNextQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class), any()))
                 .willReturn(Flux.just("다음 면접 질문을 하겠습니다."));
         given(interviewAiService.generateFeedback(any(), any(InterviewType.class), any(PlanTier.class)))
-                .willReturn(new InterviewFeedbackResult(
-                        75,
-                        List.of(new InterviewFeedbackResult.ExpertFeedback("기술 면접관", 75, "전반적으로 기술적 이해도가 적절합니다.")),
-                        "논리적인 답변 구조를 보여주었습니다.",
-                        "더 구체적인 실무 경험을 제시하면 좋겠습니다.",
-                        null
-                ));
+                .willReturn(feedbackResult(PlanTier.FREE));
 
         SubscriptionProduct freeProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
                 .name("Free")
@@ -551,12 +546,7 @@ class InterviewControllerTest {
     void getFeedback_success() throws Exception {
         InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
         interviewFeedbackRepository.save(InterviewFeedback.create(
-                session, 80,
-                "[{\"expertRole\":\"기술 면접관\",\"score\":80,\"evaluation\":\"전반적으로 좋습니다.\"}]",
-                "논리적인 답변 구조",
-                "더 구체적인 사례 제시 필요",
-                null
-        ));
+                session, feedbackResult(PlanTier.BASIC), PlanTier.BASIC));
 
         mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -565,12 +555,59 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.feedbackStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.feedback.overallScore").value(80))
-                .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].expertRole").value("기술 면접관"))
-                .andExpect(jsonPath("$.data.feedback.strengths").value("논리적인 답변 구조"))
-                .andExpect(jsonPath("$.data.feedback.improvements").value("더 구체적인 사례 제시 필요"))
+                .andExpect(jsonPath("$.data.feedback.generatedTier").value("BASIC"))
+                .andExpect(jsonPath("$.data.feedback.coachBrief.summary").value("핵심 요약"))
+                .andExpect(jsonPath("$.data.feedback.coachBrief.keyStrength").value("핵심 강점"))
+                .andExpect(jsonPath("$.data.feedback.scores.structure").value(78))
+                .andExpect(jsonPath("$.data.feedback.strengths.length()").value(3))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].title").value("개선점 1"))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].detail").value("개선 상세 1"))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].practiceAvailable").value(false))
+                .andExpect(jsonPath("$.data.feedback.expertFeedbacks").doesNotExist())
+                .andExpect(jsonPath("$.data.feedback.detailedAnalysis").doesNotExist())
                 .andDo(document("interview-get-feedback",
                         resource(FeedbackDocs.success())
                 ));
+    }
+
+    @Test
+    @DisplayName("과거 Free 피드백의 4축 점수는 이후 유료 구독 이력이 있으면 다운그레이드 후에도 공개한다")
+    void getFeedback_freeGeneratedAfterPaidHistory_exposesScoresPermanently() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
+        interviewFeedbackRepository.saveAndFlush(InterviewFeedback.create(
+                session, feedbackResult(PlanTier.FREE), PlanTier.FREE));
+
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        SubscriptionProduct basicProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Basic")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .maxQuestions(5)
+                .weeklyInterviewLimit(4)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        SubscriptionPlan basicPlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(BigDecimal.valueOf(5900))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription paid = Subscription.create(testUser.getId(), basicPlan);
+        paid.activate();
+        subscriptionRepository.saveAndFlush(paid);
+        paid.cancel();
+        subscriptionRepository.flush();
+        Subscription newFree = Subscription.create(testUser.getId(), currentSubscription.getSubscriptionPlan());
+        newFree.activate();
+        subscriptionRepository.saveAndFlush(newFree);
+
+        mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.feedback.scores.structure").value(78))
+                .andExpect(jsonPath("$.data.feedback.strengths").isEmpty())
+                .andExpect(jsonPath("$.data.feedback.improvements[0].detail").isEmpty());
     }
 
     @Test

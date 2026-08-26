@@ -9,6 +9,7 @@ import java.util.List;
 public record FeedbackGenerationContext(
         List<InterviewMessage> history,
         InterviewType interviewType,
-        PlanTier planTier
+        PlanTier planTier,
+        int totalQuestions
 ) {
 }

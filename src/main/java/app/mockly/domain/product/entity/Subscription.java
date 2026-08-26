@@ -36,6 +36,9 @@ public class Subscription extends BaseEntity {
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
+    @Column(name = "activated_at")
+    private Instant activatedAt;
+
     @Column(name = "current_period_start")
     private LocalDateTime currentPeriodStart;
 
@@ -69,6 +72,9 @@ public class Subscription extends BaseEntity {
         this.pastDueAt = null;
         this.currentMarker = true;
         LocalDateTime now = LocalDateTime.now();
+        if (this.activatedAt == null) {
+            this.activatedAt = Instant.now();
+        }
         this.startedAt = now;
         this.currentPeriodStart = now;
         this.currentPeriodEnd = calculatePeriodEnd(now);
