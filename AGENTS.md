@@ -33,6 +33,13 @@
 - 비즈니스 로직은 service에 두고 controller는 HTTP 입출력에만 집중한다. 엔티티를 API 응답으로 직접 노출하지 않는다.
 - 도메인 예외는 `global/exception`에 두고 `GlobalExceptionHandler`에 등록한다.
 - controller에서 직접 쓰는 DTO는 HTTP 동사를 접두사로 쓴다. 예: `GetXXXResponse`, `CreateXXXRequest`, `DeleteXXXResponse`.
+- 클래스 suffix는 구현 기술이 아니라 역할을 기준으로 선택한다.
+  - `Service`: 비즈니스 유스케이스, 조회·생성·상태 변경 등 어플리케이션 로직
+  - `EventHandler`: 특정 이벤트를 받아 처리를 시작하는 비동기·이벤트 진입점
+  - `Job`: 주기적으로 실행되는 스케줄 작업
+  - `Repository`: 엔티티 조회·저장과 DB 접근
+  - `Policy`: 외부 조회 없이 규칙을 판정하는 순수 정책 객체
+- `Transaction`, `Helper` 같이 구현 방식이나 모호한 단어를 클래스 책임으로 사용하지 않는다. 별도 Bean으로 트랜잭션 경계를 분리하더라도 클래스명은 실제 비즈니스 책임을 표현한다.
 - JPA 조회는 N+1을 점검하고 필요한 경우 `JOIN FETCH`를 사용한다. 읽기 전용 service에는 `@Transactional(readOnly = true)`를 사용한다.
 
 ## 데이터·보안 규칙
