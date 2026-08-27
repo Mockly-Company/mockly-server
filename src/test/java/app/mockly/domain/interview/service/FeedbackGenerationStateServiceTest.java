@@ -69,7 +69,8 @@ class FeedbackGenerationStateServiceTest {
                 .build();
 
         given(interviewSessionRepository.markFeedbackGeneratingIfPending(
-                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING), any(Instant.class)))
+                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING),
+                any(UUID.class), any(Instant.class)))
                 .willReturn(1);
         given(interviewSessionRepository.findById(sessionId)).willReturn(Optional.of(session));
         given(interviewMessageRepository.findBySessionIdOrderByIdAsc(sessionId)).willReturn(List.of());
@@ -77,6 +78,7 @@ class FeedbackGenerationStateServiceTest {
         Optional<FeedbackContext> result = stateService.start(sessionId);
 
         assertThat(result).isPresent();
+        assertThat(result.get().taskId()).isNotNull();
         assertThat(result.get().feedbackStatus()).isEqualTo(FeedbackStatus.GENERATING);
         assertThat(result.get().context().interviewType()).isEqualTo(InterviewType.TECHNICAL);
         assertThat(result.get().context().planTier()).isEqualTo(PlanTier.PRO);
@@ -88,7 +90,8 @@ class FeedbackGenerationStateServiceTest {
         UUID sessionId = UUID.randomUUID();
 
         given(interviewSessionRepository.markFeedbackGeneratingIfPending(
-                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING), any(Instant.class)))
+                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING),
+                any(UUID.class), any(Instant.class)))
                 .willReturn(0);
         given(interviewSessionRepository.existsById(sessionId)).willReturn(true);
 
@@ -105,7 +108,8 @@ class FeedbackGenerationStateServiceTest {
         UUID sessionId = UUID.randomUUID();
 
         given(interviewSessionRepository.markFeedbackGeneratingIfPending(
-                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING), any(Instant.class)))
+                eq(sessionId), eq(FeedbackStatus.PENDING), eq(FeedbackStatus.GENERATING),
+                any(UUID.class), any(Instant.class)))
                 .willReturn(0);
         given(interviewSessionRepository.existsById(sessionId)).willReturn(false);
 
@@ -119,10 +123,12 @@ class FeedbackGenerationStateServiceTest {
     @DisplayName("GENERATING 세션이면 완료 전이 후 피드백을 저장한다")
     void complete_generating_savesFeedback() {
         UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
         InterviewFeedbackResult result = feedbackResult(PlanTier.PRO);
 
-        given(interviewSessionRepository.completeFeedbackIfGenerating(
+        given(interviewSessionRepository.completeFeedbackIfOwned(
                 eq(sessionId),
+                eq(taskId),
                 eq(FeedbackStatus.GENERATING),
                 eq(FeedbackStatus.COMPLETED),
                 eq(InterviewSessionStatus.COMPLETED),
@@ -134,7 +140,7 @@ class FeedbackGenerationStateServiceTest {
                 .feedbackGenerationTier(PlanTier.PRO)
                 .build()));
 
-        Optional<FeedbackStatus> status = stateService.complete(sessionId, result);
+        Optional<FeedbackStatus> status = stateService.complete(sessionId, taskId, result);
 
         assertThat(status).contains(FeedbackStatus.COMPLETED);
         verify(interviewFeedbackRepository).saveAndFlush(any(InterviewFeedback.class));
@@ -144,9 +150,11 @@ class FeedbackGenerationStateServiceTest {
     @DisplayName("이미 완료 처리 중인 늦은 worker는 피드백을 저장하지 않는다")
     void complete_lateWorker_returnsEmpty() {
         UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
 
-        given(interviewSessionRepository.completeFeedbackIfGenerating(
+        given(interviewSessionRepository.completeFeedbackIfOwned(
                 eq(sessionId),
+                eq(taskId),
                 eq(FeedbackStatus.GENERATING),
                 eq(FeedbackStatus.COMPLETED),
                 eq(InterviewSessionStatus.COMPLETED),
@@ -154,7 +162,32 @@ class FeedbackGenerationStateServiceTest {
                 any(Instant.class)))
                 .willReturn(0);
 
-        Optional<FeedbackStatus> status = stateService.complete(sessionId, feedbackResult(PlanTier.PRO));
+        Optional<FeedbackStatus> status = stateService.complete(
+                sessionId, taskId, feedbackResult(PlanTier.PRO));
+
+        assertThat(status).isEmpty();
+        verify(interviewSessionRepository, never()).findById(any());
+        verifyNoInteractions(interviewFeedbackRepository);
+    }
+
+    @Test
+    @DisplayName("현재 작업과 다른 task ID를 가진 늦은 worker는 피드백을 저장하지 않는다")
+    void complete_differentTaskId_returnsEmpty() {
+        UUID sessionId = UUID.randomUUID();
+        UUID staleTaskId = UUID.randomUUID();
+
+        given(interviewSessionRepository.completeFeedbackIfOwned(
+                eq(sessionId),
+                eq(staleTaskId),
+                eq(FeedbackStatus.GENERATING),
+                eq(FeedbackStatus.COMPLETED),
+                eq(InterviewSessionStatus.COMPLETED),
+                any(Instant.class),
+                any(Instant.class)))
+                .willReturn(0);
+
+        Optional<FeedbackStatus> status = stateService.complete(
+                sessionId, staleTaskId, feedbackResult(PlanTier.PRO));
 
         assertThat(status).isEmpty();
         verify(interviewSessionRepository, never()).findById(any());
@@ -165,9 +198,11 @@ class FeedbackGenerationStateServiceTest {
     @DisplayName("완료 claim 후 피드백 저장 실패는 완료 저장 예외로 전파한다")
     void complete_saveFailure_throwsCompletionException() {
         UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
 
-        given(interviewSessionRepository.completeFeedbackIfGenerating(
+        given(interviewSessionRepository.completeFeedbackIfOwned(
                 eq(sessionId),
+                eq(taskId),
                 eq(FeedbackStatus.GENERATING),
                 eq(FeedbackStatus.COMPLETED),
                 eq(InterviewSessionStatus.COMPLETED),
@@ -180,7 +215,47 @@ class FeedbackGenerationStateServiceTest {
                 .build()));
         given(interviewFeedbackRepository.saveAndFlush(any(InterviewFeedback.class))).willThrow(new RuntimeException("db error"));
 
-        assertThatThrownBy(() -> stateService.complete(sessionId, feedbackResult(PlanTier.PRO)))
+        assertThatThrownBy(() -> stateService.complete(sessionId, taskId, feedbackResult(PlanTier.PRO)))
                 .isInstanceOf(FeedbackGenerationStateService.FeedbackCompletionException.class);
+    }
+
+    @Test
+    @DisplayName("현재 task ID의 worker만 피드백을 실패로 전이한다")
+    void fail_ownedTask_marksFailed() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        given(interviewSessionRepository.failFeedbackIfOwned(
+                eq(sessionId),
+                eq(taskId),
+                eq(FeedbackStatus.GENERATING),
+                eq(FeedbackStatus.FAILED),
+                eq("ai error"),
+                any(Instant.class)))
+                .willReturn(1);
+
+        Optional<FeedbackStatus> status = stateService.fail(sessionId, taskId, "ai error");
+
+        assertThat(status).contains(FeedbackStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("현재 작업과 다른 task ID를 가진 늦은 worker는 실패 상태를 덮어쓰지 않는다")
+    void fail_differentTaskId_returnsEmpty() {
+        UUID sessionId = UUID.randomUUID();
+        UUID staleTaskId = UUID.randomUUID();
+
+        given(interviewSessionRepository.failFeedbackIfOwned(
+                eq(sessionId),
+                eq(staleTaskId),
+                eq(FeedbackStatus.GENERATING),
+                eq(FeedbackStatus.FAILED),
+                eq("late error"),
+                any(Instant.class)))
+                .willReturn(0);
+
+        Optional<FeedbackStatus> status = stateService.fail(sessionId, staleTaskId, "late error");
+
+        assertThat(status).isEmpty();
     }
 }

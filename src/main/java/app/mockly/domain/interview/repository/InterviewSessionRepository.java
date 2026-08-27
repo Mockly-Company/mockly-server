@@ -26,12 +26,15 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     @EntityGraph(attributePaths = "feedback")
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
 
-    List<InterviewSession> findByFeedbackStatusInAndUpdatedAtBefore(List<FeedbackStatus> statuses, Instant threshold);
+    List<InterviewSession> findTop100ByFeedbackStatusInAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+            List<FeedbackStatus> statuses,
+            Instant threshold);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE InterviewSession s
             SET s.feedbackStatus = :generatingStatus,
+                s.feedbackGenerationTaskId = :taskId,
                 s.updatedAt = :updatedAt
             WHERE s.id = :sessionId
               AND s.feedbackStatus = :pendingStatus
@@ -39,6 +42,7 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     int markFeedbackGeneratingIfPending(@Param("sessionId") UUID sessionId,
                                         @Param("pendingStatus") FeedbackStatus pendingStatus,
                                         @Param("generatingStatus") FeedbackStatus generatingStatus,
+                                        @Param("taskId") UUID taskId,
                                         @Param("updatedAt") Instant updatedAt);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -46,16 +50,71 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
             UPDATE InterviewSession s
             SET s.status = :completedSessionStatus,
                 s.feedbackStatus = :completedFeedbackStatus,
+                s.feedbackGenerationTaskId = null,
                 s.completedAt = :completedAt,
                 s.updatedAt = :updatedAt
             WHERE s.id = :sessionId
               AND s.feedbackStatus = :generatingStatus
+              AND s.feedbackGenerationTaskId = :taskId
             """)
-    int completeFeedbackIfGenerating(@Param("sessionId") UUID sessionId,
-                                     @Param("generatingStatus") FeedbackStatus generatingStatus,
-                                     @Param("completedFeedbackStatus") FeedbackStatus completedFeedbackStatus,
-                                     @Param("completedSessionStatus") InterviewSessionStatus completedSessionStatus,
-                                     @Param("completedAt") Instant completedAt,
-                                     @Param("updatedAt") Instant updatedAt);
+    int completeFeedbackIfOwned(@Param("sessionId") UUID sessionId,
+                                @Param("taskId") UUID taskId,
+                                @Param("generatingStatus") FeedbackStatus generatingStatus,
+                                @Param("completedFeedbackStatus") FeedbackStatus completedFeedbackStatus,
+                                @Param("completedSessionStatus") InterviewSessionStatus completedSessionStatus,
+                                @Param("completedAt") Instant completedAt,
+                                @Param("updatedAt") Instant updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE InterviewSession s
+            SET s.feedbackStatus = :failedStatus,
+                s.feedbackGenerationTaskId = null,
+                s.failReason = :failReason,
+                s.updatedAt = :updatedAt
+            WHERE s.id = :sessionId
+              AND s.feedbackStatus = :generatingStatus
+              AND s.feedbackGenerationTaskId = :taskId
+            """)
+    int failFeedbackIfOwned(@Param("sessionId") UUID sessionId,
+                            @Param("taskId") UUID taskId,
+                            @Param("generatingStatus") FeedbackStatus generatingStatus,
+                            @Param("failedStatus") FeedbackStatus failedStatus,
+                            @Param("failReason") String failReason,
+                            @Param("updatedAt") Instant updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE InterviewSession s
+            SET s.feedbackStatus = :pendingStatus,
+                s.feedbackGenerationTaskId = null,
+                s.failReason = null,
+                s.updatedAt = :updatedAt
+            WHERE s.id = :sessionId
+              AND s.feedbackStatus = :generatingStatus
+              AND s.feedbackGenerationTaskId = :taskId
+              AND s.updatedAt < :threshold
+            """)
+    int requeueStaleGenerating(@Param("sessionId") UUID sessionId,
+                               @Param("taskId") UUID taskId,
+                               @Param("generatingStatus") FeedbackStatus generatingStatus,
+                               @Param("pendingStatus") FeedbackStatus pendingStatus,
+                               @Param("threshold") Instant threshold,
+                               @Param("updatedAt") Instant updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE InterviewSession s
+            SET s.feedbackGenerationTaskId = null,
+                s.failReason = null,
+                s.updatedAt = :updatedAt
+            WHERE s.id = :sessionId
+              AND s.feedbackStatus = :pendingStatus
+              AND s.updatedAt < :threshold
+            """)
+    int requeueStalePending(@Param("sessionId") UUID sessionId,
+                            @Param("pendingStatus") FeedbackStatus pendingStatus,
+                            @Param("threshold") Instant threshold,
+                            @Param("updatedAt") Instant updatedAt);
 
 }

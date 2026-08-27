@@ -33,12 +33,14 @@ public class FeedbackGenerationStateService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<FeedbackContext> start(UUID sessionId) {
+        UUID taskId = UUID.randomUUID();
         int updatedRows = interviewSessionRepository.markFeedbackGeneratingIfPending(
-                sessionId, FeedbackStatus.PENDING, FeedbackStatus.GENERATING, Instant.now());
+                sessionId, FeedbackStatus.PENDING, FeedbackStatus.GENERATING, taskId, Instant.now());
         if (updatedRows == 0) {
             if (!interviewSessionRepository.existsById(sessionId)) {
                 throw new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND);
             }
+            // 다른 작업자가 선점하거나 이미 처리되어 작업 소유권을 얻지 못한 경우
             return Optional.empty();
         }
 
@@ -51,14 +53,15 @@ public class FeedbackGenerationStateService {
                 session.getFeedbackGenerationTier(),
                 session.getTotalQuestions()
         );
-        return Optional.of(new FeedbackContext(genCtx, session.getFeedbackStatus()));
+        return Optional.of(new FeedbackContext(genCtx, session.getFeedbackStatus(), taskId));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<FeedbackStatus> complete(UUID sessionId, InterviewFeedbackResult result) {
+    public Optional<FeedbackStatus> complete(UUID sessionId, UUID taskId, InterviewFeedbackResult result) {
         Instant now = Instant.now();
-        int updatedRows = interviewSessionRepository.completeFeedbackIfGenerating(
+        int updatedRows = interviewSessionRepository.completeFeedbackIfOwned(
                 sessionId,
+                taskId,
                 FeedbackStatus.GENERATING,
                 FeedbackStatus.COMPLETED,
                 InterviewSessionStatus.COMPLETED,
@@ -80,13 +83,26 @@ public class FeedbackGenerationStateService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FeedbackStatus fail(UUID sessionId, String reason) {
-        return interviewSessionRepository.findById(sessionId)
-                .map(session -> {
-                    session.markFeedbackFailed(reason);
-                    return session.getFeedbackStatus();
-                })
-                .orElse(FeedbackStatus.FAILED);
+    public Optional<FeedbackStatus> fail(UUID sessionId, UUID taskId, String reason) {
+        String failReason = truncateFailReason(reason);
+        int updatedRows = interviewSessionRepository.failFeedbackIfOwned(
+                sessionId,
+                taskId,
+                FeedbackStatus.GENERATING,
+                FeedbackStatus.FAILED,
+                failReason,
+                Instant.now());
+        if (updatedRows == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(FeedbackStatus.FAILED);
+    }
+
+    private String truncateFailReason(String reason) {
+        if (reason == null || reason.length() <= 500) {
+            return reason;
+        }
+        return reason.substring(0, 500);
     }
 
     public static class FeedbackCompletionException extends RuntimeException {

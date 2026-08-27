@@ -63,6 +63,9 @@ public class InterviewSession extends BaseEntity {
     @Column(name = "feedback_generation_tier", length = 16)
     private PlanTier feedbackGenerationTier;
 
+    @Column(name = "feedback_generation_task_id", columnDefinition = "UUID")
+    private UUID feedbackGenerationTaskId;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private FeedbackStatus feedbackStatus;
@@ -100,24 +103,16 @@ public class InterviewSession extends BaseEntity {
         }
     }
 
-    public void markFeedbackGenerating() {
-        this.feedbackStatus = FeedbackStatus.GENERATING;
-    }
-
     public void complete() {
         this.status = InterviewSessionStatus.COMPLETED;
         this.feedbackStatus = FeedbackStatus.COMPLETED;
+        this.feedbackGenerationTaskId = null;
         this.completedAt = Instant.now();
-    }
-
-    public void markFeedbackFailed(String reason) {
-        if (this.feedbackStatus == FeedbackStatus.COMPLETED) return;
-        this.feedbackStatus = FeedbackStatus.FAILED;
-        this.failReason = reason != null && reason.length() > 500 ? reason.substring(0, 500) : reason;
     }
 
     public void resetFeedbackStatus() {
         this.feedbackStatus = FeedbackStatus.PENDING;
+        this.feedbackGenerationTaskId = null;
         this.failReason = null;
     }
 

@@ -32,53 +32,73 @@ public class FeedbackGenerationEventHandler {
     public void handle(FeedbackRequestedEvent event) {
         UUID sessionId = event.sessionId();
 
+        Optional<FeedbackContext> feedbackContext;
         try {
             // TX2: GENERATING 설정 + AI 호출에 필요한 데이터 로딩
-            Optional<FeedbackContext> feedbackContext = stateService.start(sessionId);
-            if (feedbackContext.isEmpty()) {
-                log.info("피드백 생성 작업 스킵: 이미 처리 중이거나 완료된 세션 sessionId={}", sessionId);
-                return;
-            }
-            FeedbackContext ctx = feedbackContext.get();
-            feedbackSseManager.send(sessionId, ctx.feedbackStatus());
+            feedbackContext = stateService.start(sessionId);
+        } catch (Exception e) {
+            log.error("피드백 생성 작업 시작 실패 sessionId={}", sessionId, e);
+            return;
+        }
+
+        if (feedbackContext.isEmpty()) {
+            log.info("피드백 생성 작업 스킵: 이미 처리 중이거나 완료된 세션 sessionId={}", sessionId);
+            return;
+        }
+
+        processOwnedFeedback(sessionId, feedbackContext.get());
+    }
+
+    private void processOwnedFeedback(UUID sessionId, FeedbackContext feedbackContext) {
+        try {
+            feedbackSseManager.send(sessionId, feedbackContext.feedbackStatus());
 
             // NO TX: AI 호출 (재시도 포함)
-            InterviewFeedbackResult result = callAiWithRetry(sessionId, ctx.context());
+            InterviewFeedbackResult result = callAiWithRetry(sessionId, feedbackContext.context());
 
-            // TX3-success: 피드백 저장 + 세션 완료
-            Optional<FeedbackStatus> completedStatus = stateService.complete(sessionId, result);
-            if (completedStatus.isEmpty()) {
-                log.info("피드백 완료 저장 스킵: 이미 완료 처리 중이거나 완료된 세션 sessionId={}", sessionId);
-                return;
-            }
-            feedbackSseManager.send(sessionId, completedStatus.get());
-            feedbackSseManager.complete(sessionId);
+            completeOwnedFeedback(sessionId, feedbackContext.taskId(), result);
         } catch (FeedbackGenerationStateService.FeedbackCompletionException e) {
             log.error("피드백 완료 저장 실패 sessionId={}", sessionId, e);
         } catch (FeedbackInterruptedException e) {
             log.warn("피드백 생성 작업 인터럽트 sessionId={}", sessionId, e);
             Thread.currentThread().interrupt();
         } catch (Exception e) {
-            log.error("피드백 생성 실패 sessionId={}", sessionId, e);
-            FeedbackStatus failedStatus = FeedbackStatus.FAILED;
-            try {
-                // TX3-fail: 실패 마킹
-                failedStatus = stateService.fail(sessionId, e.getMessage());
-            } catch (Exception inner) {
-                log.error("피드백 실패 마킹 중 오류 sessionId={}", sessionId, inner);
-            }
-            if (failedStatus == FeedbackStatus.COMPLETED) {
-                log.info("피드백 생성 실패 처리 스킵: 이미 완료된 세션 sessionId={}", sessionId);
-                feedbackSseManager.send(sessionId, failedStatus);
-                feedbackSseManager.complete(sessionId);
-                return;
-            }
-            feedbackSseManager.send(sessionId, failedStatus, "피드백 생성에 실패했습니다.");
-            feedbackSseManager.complete(sessionId);
+            handleGenerationFailure(sessionId, feedbackContext.taskId(), e);
+        }
+    }
 
-            if (e.getCause() instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+    private void completeOwnedFeedback(UUID sessionId, UUID taskId, InterviewFeedbackResult result) {
+        // TX3-success: 피드백 저장 + 세션 완료
+        Optional<FeedbackStatus> completedStatus = stateService.complete(sessionId, taskId, result);
+        if (completedStatus.isEmpty()) {
+            log.info("피드백 완료 저장 스킵: 이미 완료 처리 중이거나 완료된 세션 sessionId={}", sessionId);
+            return;
+        }
+        feedbackSseManager.send(sessionId, completedStatus.get());
+        feedbackSseManager.complete(sessionId);
+    }
+
+    private void handleGenerationFailure(UUID sessionId, UUID taskId, Exception exception) {
+        log.error("피드백 생성 실패 sessionId={}", sessionId, exception);
+
+        Optional<FeedbackStatus> failedStatus;
+        try {
+            // TX3-fail: 실패 마킹
+            failedStatus = stateService.fail(sessionId, taskId, exception.getMessage());
+        } catch (Exception failException) {
+            log.error("피드백 실패 마킹 중 오류 sessionId={}", sessionId, failException);
+            return;
+        }
+
+        if (failedStatus.isEmpty()) {
+            log.info("피드백 실패 처리 스킵: 작업 소유권을 잃은 세션 sessionId={}, taskId={}", sessionId, taskId);
+            return;
+        }
+        feedbackSseManager.send(sessionId, failedStatus.get(), "피드백 생성에 실패했습니다.");
+        feedbackSseManager.complete(sessionId);
+
+        if (exception.getCause() instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
         }
     }
 

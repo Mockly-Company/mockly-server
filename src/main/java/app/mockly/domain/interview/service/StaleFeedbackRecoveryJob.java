@@ -29,18 +29,49 @@ public class StaleFeedbackRecoveryJob {
     public void recoverStaleFeedbacks() {
         Instant threshold = Instant.now().minusSeconds(interviewFeedbackProperties.getStaleThresholdMinutes() * 60L);
         List<InterviewSession> staleSessions = interviewSessionRepository
-                .findByFeedbackStatusInAndUpdatedAtBefore(
+                .findTop100ByFeedbackStatusInAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                         List.of(FeedbackStatus.PENDING, FeedbackStatus.GENERATING), threshold);
 
+        int recoveredCount = 0;
         for (InterviewSession session : staleSessions) {
-            log.warn("stuck 피드백 복구: sessionId={}, feedbackStatus={}, updatedAt={}",
-                    session.getId(), session.getFeedbackStatus(), session.getUpdatedAt());
-            session.resetFeedbackStatus();
-            eventPublisher.publishEvent(new FeedbackRequestedEvent(session.getId()));
+            if (recover(session, threshold)) {
+                log.warn("stuck 피드백 복구: sessionId={}, feedbackStatus={}, updatedAt={}",
+                        session.getId(), session.getFeedbackStatus(), session.getUpdatedAt());
+                eventPublisher.publishEvent(new FeedbackRequestedEvent(session.getId()));
+                recoveredCount++;
+            }
         }
 
-        if (!staleSessions.isEmpty()) {
-            log.info("stuck 피드백 {}건 복구 완료", staleSessions.size());
+        if (recoveredCount > 0) {
+            log.info("stuck 피드백 {}건 복구 완료", recoveredCount);
         }
+    }
+
+    private boolean recover(InterviewSession session, Instant threshold) {
+        if (session.getFeedbackStatus() == FeedbackStatus.GENERATING) {
+            return recoverGenerating(session, threshold);
+        }
+        return recoverPending(session, threshold);
+    }
+
+    private boolean recoverGenerating(InterviewSession session, Instant threshold) {
+        if (session.getFeedbackGenerationTaskId() == null) {
+            log.warn("task ID가 없는 GENERATING 세션 복구 생략: sessionId={}, updatedAt={}",
+                    session.getId(), session.getUpdatedAt());
+            return false;
+        }
+        return interviewSessionRepository.requeueStaleGenerating(
+                session.getId(), session.getFeedbackGenerationTaskId(),
+                FeedbackStatus.GENERATING, FeedbackStatus.PENDING,
+                threshold,
+                Instant.now()) == 1;
+    }
+
+    private boolean recoverPending(InterviewSession session, Instant threshold) {
+        return interviewSessionRepository.requeueStalePending(
+                session.getId(),
+                FeedbackStatus.PENDING,
+                threshold,
+                Instant.now()) == 1;
     }
 }

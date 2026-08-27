@@ -11,6 +11,7 @@
 - 강점과 개선점을 각각 독립된 자식 행으로 저장합니다.
 - 마지막 답변 제출 시점의 플랜을 피드백 생성 티어로 고정합니다.
 - AI 결과가 플랜별 계약을 위반하면 저장하지 않고 최대 3회 다시 생성합니다.
+- AI 호출 전에 백엔드 작업 ID를 저장하고, 같은 작업 ID를 가진 worker만 완료·실패할 수 있습니다.
 - Free에서 생성한 4축 점수는 유료 전환 전까지 숨기고, 유료 전환 후 영구 공개합니다.
 - Basic/Pro에서 생성한 상세 피드백은 이후 Free로 내려가도 계속 제공합니다.
 
@@ -25,7 +26,9 @@
     ↓
 트랜잭션 커밋 후 피드백 생성 이벤트 실행
     ↓
-PENDING → GENERATING 조건부 전이로 작업 선점
+백엔드가 feedbackGenerationTaskId 생성
+    ↓
+PENDING → GENERATING 조건부 전이와 task ID 저장
     ↓
 저장된 티어와 대화 내역으로 AI 호출
     ↓
@@ -33,7 +36,9 @@ PENDING → GENERATING 조건부 전이로 작업 선점
     ↓
 계약 위반 시 전체 피드백을 최대 3회 재생성
     ↓
-부모 피드백과 강점·개선점 저장 + 세션 COMPLETED 전이
+같은 task ID인지 조건부 UPDATE로 검증
+    ↓
+소유권이 유지된 경우에만 부모 피드백과 강점·개선점 저장 + 세션 COMPLETED 전이
     ↓
 조회 시 생성 티어와 현재 구독 이력에 따라 응답 노출 범위 결정
 ```
@@ -56,6 +61,9 @@ PENDING → GENERATING 조건부 전이로 작업 선점
   - 구독이 최초 활성화된 절대 시각을 저장합니다.
 - `interview_session.feedback_generation_tier`
   - 마지막 답변 제출 시점의 플랜을 저장합니다.
+- `interview_session.feedback_generation_task_id`
+  - AI 호출 전에 백엔드가 발급한 현재 worker의 작업 소유권 UUID를 저장합니다.
+  - `GENERATING`이 끝나거나 stale 복구가 실행되면 제거합니다.
 - `interview_feedback`
   - 종합 점수, 코치 브리핑, 4축 점수, `next_practice_point`, `generated_tier`를 저장합니다.
 - `feedback_strength`
@@ -70,6 +78,7 @@ PENDING → GENERATING 조건부 전이로 작업 선점
 - `(feedback_id, sort_order)`, `(feedback_id, rank)` 유일 제약이 중복 항목을 방지하는지
 - 자식 테이블의 `ON DELETE CASCADE`가 부모 삭제 정책과 맞는지
 - Java `int`와 PostgreSQL 스키마 검증이 일치하도록 숫자 컬럼이 `INTEGER`인지
+- stale 조회용 `(feedback_status, updated_at)` 인덱스가 복구 Job 쿼리와 일치하는지
 
 ### `InterviewSession`
 
@@ -79,6 +88,8 @@ PENDING → GENERATING 조건부 전이로 작업 선점
 
 피드백 생성은 비동기이므로 AI 응답이 도착하기 전에 사용자의 플랜이 바뀔 수 있습니다. 생성 시점에 현재 플랜을 다시 조회하면 사용자가 답변을 제출했을 때의 정책과 다른 피드백이 만들어질 수 있습니다.
 
+stale 복구 후 새 worker가 시작된 상태에서 이전 worker가 늦게 응답할 수도 있습니다. 세션 상태만 확인하면 이전 worker가 새 worker의 `GENERATING` 상태를 자신의 작업으로 오인할 수 있으므로 작업 ID도 함께 저장합니다.
+
 #### 무엇이 어떻게 바뀌었나
 
 `startFeedbackGeneration(PlanTier generationTier)`가 다음 값을 함께 설정합니다.
@@ -87,12 +98,16 @@ PENDING → GENERATING 조건부 전이로 작업 선점
 - 피드백 상태 `PENDING`
 - `feedbackGenerationTier`
 - 마지막 답변 제출 시각인 `endedAt`
+- 현재 피드백 worker의 `feedbackGenerationTaskId`
+  - AI 호출 전 `FeedbackGenerationStateService.start()`가 생성해 저장합니다.
+  - AI API에는 전달하지 않으며 백엔드 내부 소유권 확인에만 사용합니다.
 
 #### 리뷰할 부분
 
 - 티어 고정과 마지막 답변 저장이 같은 트랜잭션에서 처리되는지
 - 재시도 시 `feedbackGenerationTier`가 변경되지 않는지
 - `endedAt`이 피드백 완료 시각과 혼용되지 않는지
+- 수동 retry에서 이전 task ID가 제거되는지
 
 ### `InterviewFeedback`, `FeedbackStrength`, `FeedbackImprovement`
 
@@ -207,6 +222,10 @@ JSON 역직렬화 성공은 비즈니스 계약 충족을 보장하지 않습니
 #### 무엇이 어떻게 바뀌었나
 
 - 조건부 상태 전이로 한 worker만 작업권을 얻습니다.
+- `start()`가 반환한 task ID를 AI 재호출 동안 유지하고 `complete()` 또는 `fail()`에 전달합니다.
+- `handle()`은 작업 시작과 중복 이벤트 판정만 담당하고, 소유권 획득 이후 흐름은 `processOwnedFeedback()`에 위임합니다.
+- `start()` 예외는 좁은 `try-catch`에서 처리하여 소유권을 얻지 못한 세션을 `FAILED`로 변경하지 않습니다.
+- 완료와 실패 처리는 `completeOwnedFeedback()`, `handleGenerationFailure()`로 분리했습니다.
 - AI 호출 직후 `FeedbackResultValidator`를 실행합니다.
 - 호출 또는 검증이 실패하면 전체 결과를 최대 3회 다시 생성합니다.
 - 3회 모두 실패하면 세션 피드백 상태를 `FAILED`로 전환합니다.
@@ -218,6 +237,8 @@ JSON 역직렬화 성공은 비즈니스 계약 충족을 보장하지 않습니
 - 부분 결과를 재사용하지 않고 전체 결과를 다시 생성하는지
 - 인터럽트 발생 시 스레드 상태를 보존하는지
 - 저장 트랜잭션 실패를 일반 AI 실패와 동일하게 처리하지 않는지
+- task ID가 일치하지 않는 늦은 worker가 terminal SSE를 전송하지 않는지
+- `start()` 예외와 `Optional.empty()`가 각각 실제 오류와 정상적인 작업권 미획득으로 구분되는지
 
 ### `FeedbackGenerationStateService`
 
@@ -230,17 +251,41 @@ AI 호출은 트랜잭션 밖에서 실행해야 하지만, 상태 전이와 피
 #### 무엇이 어떻게 바뀌었나
 
 - `start()`
-  - `PENDING → GENERATING` 전이와 AI 입력 조회를 `REQUIRES_NEW`로 처리합니다.
+  - 백엔드가 UUID task ID를 생성합니다.
+  - `PENDING → GENERATING` 전이, task ID 저장과 AI 입력 조회를 `REQUIRES_NEW`로 처리합니다.
 - `complete()`
-  - 부모·자식 피드백 저장과 세션 `COMPLETED` 전이를 `REQUIRES_NEW`로 처리합니다.
+  - `GENERATING + 동일 task ID`일 때만 세션 완료 전이와 부모·자식 피드백 저장을 `REQUIRES_NEW`로 처리합니다.
 - `fail()`
-  - 최종 생성 실패 상태를 별도 트랜잭션으로 저장합니다.
+  - `GENERATING + 동일 task ID`일 때만 최종 생성 실패 상태를 별도 트랜잭션으로 저장합니다.
+- 완료·실패가 성공하면 task ID를 제거합니다.
 
 #### 리뷰할 부분
 
 - 자식 저장 실패 시 세션 완료 전이도 함께 롤백되는지
 - 늦게 완료된 worker가 기존 결과를 덮어쓰지 않는지
 - 작업 선점과 context 조회가 유일한 `sessionId`를 기준으로 일관되게 처리되는지
+- AI 호출과 최대 3회 내부 재생성 동안 같은 task ID를 사용하는지
+
+### `StaleFeedbackRecoveryJob`
+
+파일: [StaleFeedbackRecoveryJob.java](../../src/main/java/app/mockly/domain/interview/service/StaleFeedbackRecoveryJob.java)
+
+#### 왜 바뀌었나
+
+stale 세션을 조회한 뒤 엔티티 상태를 바로 변경하면, 조회 직후 정상 worker가 완료하거나 다른 서버가 먼저 복구한 상태를 덮어쓸 수 있습니다.
+
+#### 무엇이 어떻게 바뀌었나
+
+- stale `GENERATING`은 조회 당시 상태, threshold, task ID가 모두 같은 경우에만 `PENDING`으로 되돌립니다.
+- stale `PENDING`도 threshold 조건부 UPDATE가 성공한 경우에만 다시 발행합니다.
+- 조건부 UPDATE에 성공한 Job만 새 `FeedbackRequestedEvent`를 발행합니다.
+- 복구 시 이전 task ID와 실패 사유를 제거합니다.
+
+#### 리뷰할 부분
+
+- 여러 서버의 Job이 같은 세션을 조회해도 한 곳만 이벤트를 발행하는지
+- stale 조회 후 정상 완료된 세션이 다시 `PENDING`으로 바뀌지 않는지
+- 이전 worker의 완료·실패가 새 worker의 task ID와 일치하지 않아 거절되는지
 
 ## 6. 티어별 노출 정책
 
@@ -340,15 +385,21 @@ DB에 저장된 피드백과 현재 사용자에게 보여줄 피드백의 범�
 2. `FeedbackGenerationEventHandlerTest`
    - 중복 이벤트, 재생성, 3회 실패
 3. `FeedbackGenerationStateServiceTest`
-   - 작업 선점, 늦은 worker, 저장 실패
-4. `InterviewFeedbackTest`
+   - task ID 발급, 늦은 worker의 완료·실패 거절, 저장 실패
+4. `FeedbackGenerationOwnershipIntegrationTest`
+   - stale 복구 후 신규 worker 소유권과 이전 worker의 조건부 UPDATE 거절
+5. `StaleFeedbackRecoveryJobTest`
+   - threshold, task ID, 중복 복구 이벤트 차단
+6. `FeedbackGenerationTransactionIntegrationTest`
+   - 피드백 저장 실패 시 완료 전이와 task ID 제거가 함께 롤백되는지
+7. `InterviewFeedbackTest`
    - 부모와 자식 엔티티 매핑
-5. `FeedbackVisibilityServiceTest`
+8. `FeedbackVisibilityServiceTest`
    - Free 잠금, 유료 전환, 다운그레이드, PAST_DUE Pro
-6. `InterviewControllerTest`
+9. `InterviewControllerTest`
    - 실제 구조화 JSON과 제거 필드
-7. `FlywaySchemaMigrationTest`
-   - 신규 테이블·컬럼과 Legacy 컬럼 제거
+10. `FlywaySchemaMigrationTest`
+   - 신규 테이블·task ID 컬럼·stale 조회 인덱스와 Legacy 컬럼 제거
 
 전체 회귀 검증 명령은 다음과 같습니다.
 
