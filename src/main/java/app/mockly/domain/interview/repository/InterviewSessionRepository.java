@@ -26,6 +26,24 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     @EntityGraph(attributePaths = "feedback")
     Page<InterviewSession> findByUserId(UUID userId, Pageable pageable);
 
+    @Query("""
+            SELECT s
+            FROM InterviewSession s
+            WHERE s.user.id = :userId
+              AND s.status IN (
+                  app.mockly.domain.interview.entity.InterviewSessionStatus.FEEDBACK_PENDING,
+                  app.mockly.domain.interview.entity.InterviewSessionStatus.COMPLETED
+              )
+              AND s.endedAt >= :periodStart
+              AND s.endedAt < :periodEnd
+            """)
+    List<InterviewSession> findLastAnswerSubmittedSessionsInPeriod(@Param("userId") UUID userId,
+                                                                   @Param("periodStart") Instant periodStart,
+                                                                   @Param("periodEnd") Instant periodEnd);
+
+    @EntityGraph(attributePaths = "feedback")
+    List<InterviewSession> findTop3ByUserIdAndEndedAtIsNotNullOrderByEndedAtDesc(UUID userId);
+
     List<InterviewSession> findTop100ByFeedbackStatusInAndUpdatedAtBeforeOrderByUpdatedAtAsc(
             List<FeedbackStatus> statuses,
             Instant threshold);

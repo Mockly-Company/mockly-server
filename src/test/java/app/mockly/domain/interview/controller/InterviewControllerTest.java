@@ -8,6 +8,7 @@ import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.interview.controller.docs.AbandonSessionDocs;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
 import app.mockly.domain.interview.controller.docs.FeedbackDocs;
+import app.mockly.domain.interview.controller.docs.InterviewOverviewDocs;
 import app.mockly.domain.interview.controller.docs.QuotaDocs;
 import app.mockly.domain.interview.controller.docs.RetryFeedbackDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
@@ -41,6 +42,7 @@ import app.mockly.domain.product.repository.SubscriptionProductRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -125,6 +127,9 @@ class InterviewControllerTest {
     @Autowired
     private SubscriptionRepository subscriptionRepository;
 
+    @Autowired
+    private EntityManager entityManager;
+
     private User testUser;
     private String validAccessToken;
     private Subscription currentSubscription;
@@ -185,6 +190,92 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"))
                 .andDo(document("interview-get-quota-subscription-unpaid",
                         resource(QuotaDocs.subscriptionUnpaid())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: 실제 면접·피드백으로 Overview 조회")
+    void getOverview_withInterviewHistory() throws Exception {
+        activateProSubscription();
+        Instant now = Instant.now();
+        InterviewSession previousSession = saveOverviewSession(
+                now.plus(10, ChronoUnit.MINUTES), 76, PlanTier.PRO);
+        InterviewSession latestSession = saveOverviewSession(
+                now.plus(20, ChronoUnit.MINUTES), 84, PlanTier.PRO);
+        interviewFeedbackRepository.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.summary.completedCount").value(2))
+                .andExpect(jsonPath("$.data.summary.totalPracticeSeconds").isNumber())
+                .andExpect(jsonPath("$.data.score.latest").value(84))
+                .andExpect(jsonPath("$.data.score.change").value(8))
+                .andExpect(jsonPath("$.data.recentInterviews.length()").value(2))
+                .andExpect(jsonPath("$.data.recentInterviews[0].sessionId")
+                        .value(latestSession.getId().toString()))
+                .andExpect(jsonPath("$.data.recentInterviews[0].overallScore").value(84))
+                .andExpect(jsonPath("$.data.recentInterviews[1].sessionId")
+                        .value(previousSession.getId().toString()))
+                .andExpect(jsonPath("$.data.recentInterviews[1].overallScore").value(76))
+                .andExpect(jsonPath("$.data.nextPracticePoint").value("결론부터 답변하기"))
+                .andDo(document("interview-get-overview",
+                        resource(InterviewOverviewDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: Free는 저장된 Pro 연습 포인트를 노출하지 않음")
+    void getOverview_freePlanDoesNotExposeNextPracticePoint() throws Exception {
+        saveOverviewSession(Instant.now().plus(10, ChronoUnit.MINUTES), 80, PlanTier.PRO);
+        interviewFeedbackRepository.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.score.latest").value(80))
+                .andExpect(jsonPath("$.data.recentInterviews[0].overallScore").value(80))
+                .andExpect(jsonPath("$.data.nextPracticePoint").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: 면접 이력이 없는 사용자의 Overview 조회")
+    void getOverview_withoutInterviewHistory() throws Exception {
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.summary.periodStart").isString())
+                .andExpect(jsonPath("$.data.summary.nextResetAt").isString())
+                .andExpect(jsonPath("$.data.summary.completedCount").value(0))
+                .andExpect(jsonPath("$.data.summary.totalPracticeSeconds").value(0))
+                .andExpect(jsonPath("$.data.score.latest").doesNotExist())
+                .andExpect(jsonPath("$.data.score.change").doesNotExist())
+                .andExpect(jsonPath("$.data.recentInterviews").isEmpty())
+                .andExpect(jsonPath("$.data.nextPracticePoint").doesNotExist())
+                .andDo(document("interview-get-overview-empty",
+                        resource(InterviewOverviewDocs.empty())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 실패: 미납 구독은 이용 정지 (402)")
+    void getOverview_unpaidSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        currentSubscription.markAsUnpaid();
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"))
+                .andDo(document("interview-get-overview-subscription-unpaid",
+                        resource(InterviewOverviewDocs.subscriptionUnpaid())
                 ));
     }
 
@@ -435,6 +526,54 @@ class InterviewControllerTest {
                         .feedbackStatus(feedbackStatus)
                         .build()
         );
+    }
+
+    private InterviewSession saveOverviewSession(Instant endedAt, int overallScore, PlanTier generatedTier) {
+        InterviewSession session = interviewSessionRepository.save(InterviewSession.builder()
+                .user(testUser)
+                .position("백엔드 개발자")
+                .experienceLevel(ExperienceLevel.JUNIOR)
+                .interviewType(InterviewType.TECHNICAL)
+                .totalQuestions(3)
+                .selfIntroduction("1년차 백엔드 개발자로 이커머스 서비스를 개발했습니다.")
+                .currentQuestionNumber(3)
+                .status(InterviewSessionStatus.COMPLETED)
+                .feedbackStatus(FeedbackStatus.COMPLETED)
+                .endedAt(endedAt)
+                .build());
+        InterviewFeedbackResult fixture = feedbackResult(generatedTier);
+        InterviewFeedbackResult result = new InterviewFeedbackResult(
+                overallScore,
+                fixture.coachBrief(),
+                fixture.scores(),
+                fixture.strengths(),
+                fixture.improvements(),
+                fixture.nextPracticePoint()
+        );
+        interviewFeedbackRepository.save(InterviewFeedback.create(session, result, generatedTier));
+        return session;
+    }
+
+    private void activateProSubscription() {
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        SubscriptionProduct proProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Pro")
+                .planTier(PlanTier.PRO)
+                .isActive(true)
+                .maxQuestions(10)
+                .weeklyInterviewLimit(10)
+                .weeklyImprovementPracticeLimit(4)
+                .build());
+        SubscriptionPlan proPlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(proProduct)
+                .price(BigDecimal.valueOf(9900))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription proSubscription = Subscription.create(testUser.getId(), proPlan);
+        proSubscription.activate();
+        subscriptionRepository.saveAndFlush(proSubscription);
     }
 
     @Test

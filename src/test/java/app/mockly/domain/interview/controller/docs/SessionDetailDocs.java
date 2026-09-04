@@ -26,7 +26,7 @@ public class SessionDetailDocs {
             fieldWithPath("interviewType").description("면접 유형 (TECHNICAL, BEHAVIORAL, MIXED)").type(SimpleType.STRING),
             fieldWithPath("totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
             fieldWithPath("currentQuestionNumber").description("현재 질문 번호").type(SimpleType.NUMBER),
-            fieldWithPath("status").description("세션 상태 (IN_PROGRESS, COMPLETED, ABANDONED)").type(SimpleType.STRING),
+            fieldWithPath("status").description("세션 상태 (IN_PROGRESS, FEEDBACK_PENDING, COMPLETED, ABANDONED)").type(SimpleType.STRING),
             fieldWithPath("createdAt").description("생성 시각 (ISO-8601)").type(SimpleType.STRING),
             fieldWithPath("endedAt").description("면접 종료 시각 (진행 중이면 null, ISO-8601)").type(SimpleType.STRING).optional(),
             fieldWithPath("durationSeconds").description("면접 연습 시간(초, 진행 중이면 null)").type(SimpleType.NUMBER).optional(),

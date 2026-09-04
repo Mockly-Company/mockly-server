@@ -25,7 +25,7 @@ public class SessionListDocs {
             fieldWithPath("sessions[].experienceLevel").description("경력 수준 (JUNIOR, MID, SENIOR)").type(SimpleType.STRING),
             fieldWithPath("sessions[].interviewType").description("면접 유형 (TECHNICAL, BEHAVIORAL, MIXED)").type(SimpleType.STRING),
             fieldWithPath("sessions[].totalQuestions").description("총 질문 개수").type(SimpleType.NUMBER),
-            fieldWithPath("sessions[].status").description("세션 상태 (IN_PROGRESS, COMPLETED, ABANDONED)").type(SimpleType.STRING),
+            fieldWithPath("sessions[].status").description("세션 상태 (IN_PROGRESS, FEEDBACK_PENDING, COMPLETED, ABANDONED)").type(SimpleType.STRING),
             fieldWithPath("sessions[].createdAt").description("생성 시각 (ISO-8601)").type(SimpleType.STRING),
             fieldWithPath("sessions[].endedAt").description("면접 종료 시각 (진행 중이면 null, ISO-8601)").type(SimpleType.STRING).optional(),
             fieldWithPath("sessions[].durationSeconds").description("면접 연습 시간(초, 진행 중이면 null)").type(SimpleType.NUMBER).optional(),

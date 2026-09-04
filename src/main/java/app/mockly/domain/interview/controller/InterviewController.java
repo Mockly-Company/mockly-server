@@ -8,6 +8,7 @@ import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
 import app.mockly.domain.interview.service.FeedbackSseManager;
 import app.mockly.domain.interview.service.InterviewService;
+import app.mockly.domain.interview.service.InterviewOverviewService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class InterviewController {
 
     private final InterviewService interviewService;
+    private final InterviewOverviewService interviewOverviewService;
     private final FeedbackSseManager feedbackSseManager;
 
     @GetMapping("/quota")
@@ -37,6 +39,14 @@ public class InterviewController {
             @AuthenticationPrincipal UUID userId
     ) {
         GetQuotaResponse response = interviewService.getQuota(userId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/overview")
+    public ResponseEntity<ApiResponse<GetInterviewOverviewResponse>> getOverview(
+            @AuthenticationPrincipal UUID userId
+    ) {
+        GetInterviewOverviewResponse response = interviewOverviewService.getOverview(userId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
