@@ -4,7 +4,6 @@ import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.product.entity.PlanTier;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -24,9 +23,9 @@ public class MockInterviewAiService extends InterviewAiService {
 
     private static final long MOCK_DELAY_MS = 10_000;
 
-    public MockInterviewAiService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper,
+    public MockInterviewAiService(ChatClient.Builder chatClientBuilder, InterviewPromptFactory interviewPromptFactory,
                                   InterviewAiProperties interviewAiProperties, MeterRegistry meterRegistry) {
-        super(chatClientBuilder, objectMapper, interviewAiProperties, meterRegistry);
+        super(chatClientBuilder, interviewPromptFactory, interviewAiProperties, meterRegistry);
     }
 
     @Override
