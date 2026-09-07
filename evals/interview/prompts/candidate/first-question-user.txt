@@ -1,0 +1,17 @@
+<context>
+<position>%s</position>
+<experience_level>%s</experience_level>
+<interview_type>%s</interview_type>
+</context>
+
+<candidate_data>
+<self_introduction>%s</self_introduction>
+</candidate_data>
+
+<evaluation_focus>
+<keyword>%s</keyword>
+</evaluation_focus>
+
+<task>
+첫 번째 면접 질문 한 문장을 생성하세요.
+</task>
