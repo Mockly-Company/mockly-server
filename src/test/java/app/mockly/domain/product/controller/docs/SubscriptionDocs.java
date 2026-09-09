@@ -60,6 +60,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters createSuccess() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("구독 생성")
                 .description("유료 플랜 구독을 생성합니다. 무료 플랜은 회원가입 시 자동 부여됩니다.")
@@ -71,6 +72,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters createFreePlanError() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("구독 생성 - 무료 플랜 에러")
                 .description("무료 플랜은 직접 구독할 수 없습니다.")
@@ -80,6 +82,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters createPlanNotFoundError() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("구독 생성 - 플랜 없음 에러")
                 .description("존재하지 않는 플랜입니다.")
@@ -89,6 +92,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters getSuccess() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("내 구독 조회")
                 .description("현재 활성화된 구독 정보를 조회합니다.")
@@ -99,6 +103,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters getEmpty() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("내 구독 조회 - 구독 없음")
                 .description("활성화된 구독이 없는 경우 data가 null로 반환됩니다.")
@@ -109,6 +114,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters cancelSuccess() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("구독 해지")
                 .description("구독을 해지합니다. 현재 결제 주기 종료까지 서비스 이용 가능합니다.")
@@ -119,6 +125,7 @@ public class SubscriptionDocs {
 
     public static ResourceSnippetParameters cancelForbiddenError() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Subscription")
                 .summary("구독 해지 - 권한 없음")
                 .description("본인의 구독만 해지할 수 있습니다.")

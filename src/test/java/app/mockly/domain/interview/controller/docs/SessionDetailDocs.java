@@ -46,6 +46,7 @@ public class SessionDetailDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 세션 상세 조회")
                 .description("특정 면접 세션의 상세 정보와 전체 대화 내역을 조회합니다.")
@@ -56,6 +57,7 @@ public class SessionDetailDocs {
 
     public static ResourceSnippetParameters notFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("RESOURCE_NOT_FOUND"))
                 .build();

@@ -15,6 +15,7 @@ public class StreamQuestionDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 질문 SSE 스트리밍")
                 .description("""
@@ -34,6 +35,7 @@ public class StreamQuestionDocs {
 
     public static ResourceSnippetParameters notFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .build();
     }

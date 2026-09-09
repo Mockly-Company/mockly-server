@@ -124,6 +124,18 @@ cd mockly-server
 | `PORTONE_WEBHOOK_SECRET` | PortOne 웹훅 시크릿 |
 | `PORTONE_STORE_ID` | PortOne 상점 ID |
 | `PORTONE_CHANNEL_KEY` | PortOne 채널 키 |
+| `APP_ANDROID_MINIMUM_SUPPORTED_BUILD` | Android 최소 지원 build number (기본값: 1) |
+| `APP_ANDROID_LATEST_BUILD` | Android 최신 build number (기본값: 1) |
+| `APP_ANDROID_LATEST_VERSION` | Android 최신 표시 버전 (기본값: 1.0.0) |
+| `APP_ANDROID_STORE_URL` | Google Play 앱 URL |
+| `APP_IOS_MINIMUM_SUPPORTED_BUILD` | iOS 최소 지원 build number (기본값: 1) |
+| `APP_IOS_LATEST_BUILD` | iOS 최신 build number (기본값: 1) |
+| `APP_IOS_LATEST_VERSION` | iOS 최신 표시 버전 (기본값: 1.0.0) |
+| `APP_IOS_STORE_URL` | App Store 앱 URL |
+| `APP_MAINTENANCE_ACTIVE` | 전체 서비스 점검 활성 여부 (기본값: false) |
+| `APP_MAINTENANCE_MESSAGE` | 점검 안내 메시지 |
+| `APP_MAINTENANCE_STARTS_AT` | 점검 시작 시각 (ISO 8601) |
+| `APP_MAINTENANCE_ENDS_AT` | 점검 예상 종료 시각 (ISO 8601) |
 
 **3. 실행**
 

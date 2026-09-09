@@ -25,6 +25,7 @@ public class AuthMeDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .summary("현재 사용자 조회")
                 .description("JWT 기반 인증으로 현재 로그인한 사용자 정보를 조회합니다.")
                 .requestHeaders(REQUEST_HEADERS)
@@ -34,18 +35,21 @@ public class AuthMeDocs {
 
     public static ResourceSnippetParameters noToken() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .responseFields(ApiResponseDocs.errorResponse("에러 코드"))
                 .build();
     }
 
     public static ResourceSnippetParameters invalidToken() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .responseFields(ApiResponseDocs.errorResponse("에러 코드 (INVALID_TOKEN)"))
                 .build();
     }
 
     public static ResourceSnippetParameters userNotFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .responseFields(ApiResponseDocs.errorResponse("에러 코드 (USER_NOT_FOUND)"))
                 .build();
     }

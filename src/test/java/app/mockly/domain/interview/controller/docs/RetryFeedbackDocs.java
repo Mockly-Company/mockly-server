@@ -35,6 +35,7 @@ public class RetryFeedbackDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 피드백 재시도")
                 .description("실패한 면접 피드백 생성을 다시 요청합니다. FAILED 상태이면서 세션 상태가 FEEDBACK_PENDING인 경우에만 사용할 수 있습니다.")
@@ -46,6 +47,7 @@ public class RetryFeedbackDocs {
 
     public static ResourceSnippetParameters invalidStatus() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .pathParameters(parameterWithName("sessionId").description("면접 세션 ID"))
                 .responseFields(ApiResponseDocs.errorResponse("VALIDATION_ERROR"))
@@ -54,6 +56,7 @@ public class RetryFeedbackDocs {
 
     public static ResourceSnippetParameters notFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .pathParameters(parameterWithName("sessionId").description("면접 세션 ID"))
                 .responseFields(ApiResponseDocs.errorResponse("RESOURCE_NOT_FOUND"))

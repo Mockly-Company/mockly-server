@@ -38,6 +38,7 @@ public class SessionListDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 세션 목록 조회")
                 .description("사용자의 면접 세션 목록을 페이지네이션으로 조회합니다. status 파라미터로 상태 필터링이 가능합니다.")
@@ -48,6 +49,7 @@ public class SessionListDocs {
 
     public static ResourceSnippetParameters filtered() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .requestHeaders(REQUEST_HEADERS)
                 .responseFields(ApiResponseDocs.withDataFields(RESPONSE_FIELDS))

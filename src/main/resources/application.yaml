@@ -54,6 +54,25 @@ logging:
     org.springframework.security.web.FilterChainProxy: DEBUG
     org.springframework.security.web.util.matcher: DEBUG
 
+# 앱 버전 호환성 및 점검 정책
+app-policy:
+  platforms:
+    android:
+      minimum-supported-build: ${APP_ANDROID_MINIMUM_SUPPORTED_BUILD:1}
+      latest-build: ${APP_ANDROID_LATEST_BUILD:1}
+      latest-version: ${APP_ANDROID_LATEST_VERSION:1.0.0}
+      store-url: ${APP_ANDROID_STORE_URL:}
+    ios:
+      minimum-supported-build: ${APP_IOS_MINIMUM_SUPPORTED_BUILD:1}
+      latest-build: ${APP_IOS_LATEST_BUILD:1}
+      latest-version: ${APP_IOS_LATEST_VERSION:1.0.0}
+      store-url: ${APP_IOS_STORE_URL:}
+  maintenance:
+    active: ${APP_MAINTENANCE_ACTIVE:false}
+    message: ${APP_MAINTENANCE_MESSAGE:}
+    starts-at: ${APP_MAINTENANCE_STARTS_AT:}
+    ends-at: ${APP_MAINTENANCE_ENDS_AT:}
+
 # OpenAI 설정
 spring.ai:
   openai:

@@ -26,6 +26,7 @@ public class AddPaymentMethodDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .summary("결제 수단 추가")
                 .description("PortOne 빌링키를 등록하여 결제 수단을 추가합니다. 첫 번째 결제 수단은 자동으로 기본 결제 수단으로 설정됩니다.")
                 .requestFields(REQUEST_FIELDS)

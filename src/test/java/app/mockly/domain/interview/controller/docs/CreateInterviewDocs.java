@@ -38,6 +38,7 @@ public class CreateInterviewDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 세션 생성")
                 .description("AI 면접 세션을 생성합니다. 첫 번째 질문은 GET /{sessionId}/questions/stream SSE 엔드포인트로 수신합니다. 플랜별 일일 쿼터와 질문 개수 제한이 적용됩니다.")
@@ -49,6 +50,7 @@ public class CreateInterviewDocs {
 
     public static ResourceSnippetParameters quotaExceeded() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("QUOTA_EXCEEDED"))
                 .build();
@@ -56,6 +58,7 @@ public class CreateInterviewDocs {
 
     public static ResourceSnippetParameters invalidQuestionCount() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("VALIDATION_ERROR"))
                 .build();
@@ -63,6 +66,7 @@ public class CreateInterviewDocs {
 
     public static ResourceSnippetParameters unauthorized() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("UNAUTHORIZED"))
                 .build();
