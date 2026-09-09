@@ -123,12 +123,9 @@ tasks.register('applyOpenApiSecurity') {
         def protectedOperations = fileTree(snippetsDir) {
             include '**/resource.json'
         }.files.collect { resourceFile ->
-            def resource = resourceFile.getText('UTF-8')
-            def isPrivate = resource =~ /"privateResource"\s*:\s*true/
-            def path = resource =~ /"path"\s*:\s*"([^"]+)"/
-            def method = resource =~ /"method"\s*:\s*"([^"]+)"/
-            if (isPrivate.find() && path.find() && method.find()) {
-                return "${path.group(1)}|${method.group(1).toLowerCase()}"
+            def resource = new groovy.json.JsonSlurper().parse(resourceFile)
+            if (resource.privateResource == true) {
+                return "${resource.request.path}|${resource.request.method.toString().toLowerCase()}"
             }
             return null
         }.findAll { operation ->
@@ -210,6 +207,46 @@ tasks.register('verifyOpenApiInBootJar') {
             throw new GradleException('bootJar의 OpenAPI 문서에 bearer 인증 스키마가 없습니다')
         }
 
+        def protectedOperations = fileTree(snippetsDir) {
+            include '**/resource.json'
+        }.files.collect { resourceFile ->
+            def resource = new groovy.json.JsonSlurper().parse(resourceFile)
+            if (resource.privateResource == true) {
+                return [
+                        path: resource.request.path,
+                        method: resource.request.method.toString().toLowerCase()
+                ]
+            }
+            return null
+        }.findAll { operation ->
+            operation != null
+        }.unique { operation ->
+            "${operation.path}|${operation.method}"
+        }
+
+        protectedOperations.each { operation ->
+            def pathStart = openapi.indexOf("  ${operation.path}:")
+            if (pathStart < 0) {
+                throw new GradleException("OpenAPI 문서에 비공개 경로 ${operation.path}가 없습니다")
+            }
+            def pathEnd = openapi.indexOf('\n  /api/', pathStart + 1)
+            if (pathEnd < 0) {
+                pathEnd = openapi.length()
+            }
+            def pathSection = openapi.substring(pathStart, pathEnd)
+            def methodStart = pathSection.indexOf("\n    ${operation.method}:")
+            if (methodStart < 0) {
+                throw new GradleException("OpenAPI 문서에 비공개 operation ${operation.method.toUpperCase()} ${operation.path}가 없습니다")
+            }
+            def methodBodyStart = pathSection.indexOf('\n', methodStart + 1) + 1
+            def methodEndMatcher = pathSection.substring(methodBodyStart) =~ /(?m)^    (get|post|put|patch|delete|options|head|trace):\s*$/
+            def methodEnd = methodEndMatcher.find() ? methodBodyStart + methodEndMatcher.start() : pathSection.length()
+            def methodSection = pathSection.substring(methodStart, methodEnd)
+            if (!methodSection.contains('\n      security:')) {
+                throw new GradleException("비공개 operation ${operation.method.toUpperCase()} ${operation.path}에 bearer 인증 정보가 없습니다")
+            }
+        }
+
         def appStatusStart = openapi.indexOf('  /api/app-status:')
         def appStatusEnd = openapi.indexOf('\n  /api/', appStatusStart + 1)
         if (appStatusEnd < 0) {
@@ -220,15 +257,6 @@ tasks.register('verifyOpenApiInBootJar') {
             throw new GradleException('/api/app-status는 공개 API여야 합니다')
         }
 
-        def authMeStart = openapi.indexOf('  /api/auth/me:')
-        def authMeEnd = openapi.indexOf('\n  /api/', authMeStart + 1)
-        if (authMeEnd < 0) {
-            authMeEnd = openapi.length()
-        }
-        def authMeOperation = openapi.substring(authMeStart, authMeEnd)
-        if (!authMeOperation.contains('\n      security:')) {
-            throw new GradleException('/api/auth/me에 bearer 인증 정보가 없습니다')
-        }
     }
 }
 

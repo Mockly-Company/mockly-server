@@ -12,7 +12,7 @@ RUN chmod +x ./gradlew
 RUN gradle dependencies --no-daemon || true
 
 COPY src src
-RUN ./gradlew clean bootJar --no-daemon
+RUN ./gradlew clean verifyOpenApiInBootJar --no-daemon
 
 # 2) Runtime
 FROM eclipse-temurin:21-jre
