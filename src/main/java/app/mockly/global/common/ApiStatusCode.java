@@ -13,6 +13,7 @@ public enum ApiStatusCode {
     // 400: 클라이언트 오류
     BAD_REQUEST(400, "BAD_REQUEST", "잘못된 요청입니다"),
     VALIDATION_ERROR(400, "VALIDATION_ERROR", "입력값 검증에 실패했습니다"),
+    INVALID_CLIENT_INFO(400, "INVALID_CLIENT_INFO", "클라이언트 정보가 유효하지 않습니다"),
     DUPLICATE_RESOURCE(400, "DUPLICATE_RESOURCE", "이미 존재하는 리소스입니다"),
 
     // 401: 인증 오류

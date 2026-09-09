@@ -110,30 +110,8 @@ tasks.named('asciidoctor') {
 	dependsOn test
 }
 
-tasks.register('bearerAuthentication') {
-	mustRunAfter tasks.named('openapi3')
-	doLast {
-		def apiSpecFile = file('src/main/resources/static/openapi3.yaml')
-		def contentToAdd =
-				"  securitySchemes:\n" +
-				"    bearerAuth:\n" +
-				"      type: http\n" +
-				"      scheme: bearer\n" +
-				"      bearerFormat: JWT\n" +
-				"\n" +
-				"security:\n" +
-				"  - bearerAuth: []"
-		def existingContent = apiSpecFile.text
-		def updatedContent = existingContent + contentToAdd
-		apiSpecFile.withWriter('UTF-8') {
-			writer -> writer.write(updatedContent)
-		}
-	}
-}
-
 tasks.named('build') {
 	dependsOn tasks.named('openapi3')
-	dependsOn tasks.named('bearerAuthentication')
 }
 
 tasks.named('bootJar') {

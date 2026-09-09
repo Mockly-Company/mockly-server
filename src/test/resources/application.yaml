@@ -40,3 +40,18 @@ portone:
   store-id: test-store-id
   channel-key: test-channel-key
   webhook-secret: test-webhook-secret
+
+app-policy:
+  platforms:
+    android:
+      minimum-supported-build: 1
+      latest-build: 1
+      latest-version: 1.0.0
+      store-url: https://play.example/mockly
+    ios:
+      minimum-supported-build: 1
+      latest-build: 1
+      latest-version: 1.0.0
+      store-url: https://apps.example/mockly
+  maintenance:
+    active: false
