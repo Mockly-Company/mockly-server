@@ -26,6 +26,7 @@ public class GetPaymentMethodsDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .summary("결제 수단 목록 조회")
                 .description("사용자의 등록된 결제 수단 목록을 조회합니다. 활성(isActive=true) 상태의 결제 수단만 반환하며, 등록일 역순으로 정렬됩니다. 등록된 결제 수단이 없으면 빈 배열을 반환합니다.")
                 .responseFields(RESPONSE_FIELDS)

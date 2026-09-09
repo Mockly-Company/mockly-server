@@ -32,11 +32,13 @@ ext {
 	set('springAiVersion', "1.1.4")
 }
 
+def openapiOutputDir = layout.buildDirectory.dir('generated/openapi')
+
 openapi3 {
 	server = 'http://localhost:8080'
 	title = 'Mockly API'
 	description = 'AI 기반 모의 면접 플랫폼 API'
-	outputDirectory = "src/main/resources/static"
+	outputDirectory = openapiOutputDir.get().asFile.path
 	version = '0.0.1-SNAPSHOT'
 	format = 'yaml'
 }
@@ -114,9 +116,122 @@ tasks.named('build') {
 	dependsOn tasks.named('openapi3')
 }
 
-tasks.named('bootJar') {
-    dependsOn asciidoctor
-    from ("${asciidoctor.outputDir}") {
-        into 'static/docs'
+tasks.register('applyOpenApiSecurity') {
+    dependsOn tasks.named('openapi3')
+
+    doLast {
+        def protectedOperations = fileTree(snippetsDir) {
+            include '**/resource.json'
+        }.files.collect { resourceFile ->
+            def resource = resourceFile.getText('UTF-8')
+            def isPrivate = resource =~ /"privateResource"\s*:\s*true/
+            def path = resource =~ /"path"\s*:\s*"([^"]+)"/
+            def method = resource =~ /"method"\s*:\s*"([^"]+)"/
+            if (isPrivate.find() && path.find() && method.find()) {
+                return "${path.group(1)}|${method.group(1).toLowerCase()}"
+            }
+            return null
+        }.findAll { operation ->
+            operation != null
+        }.toSet()
+
+        def apiSpecFile = openapiOutputDir.get().file('openapi3.yaml').asFile
+        def lines = apiSpecFile.readLines('UTF-8')
+        def currentPath = null
+        def insertAfter = []
+
+        lines.eachWithIndex { line, index ->
+            def pathMatcher = line =~ /^  (\/[^:]+):\s*$/
+            if (pathMatcher.matches()) {
+                currentPath = pathMatcher.group(1)
+                return
+            }
+
+            def methodMatcher = line =~ /^    (get|post|put|patch|delete|options|head|trace):\s*$/
+            if (currentPath != null && methodMatcher.matches()) {
+                def method = methodMatcher.group(1)
+                if (!protectedOperations.contains("${currentPath}|${method}")) {
+                    return
+                }
+
+                def operationEnd = index + 1
+                while (operationEnd < lines.size()
+                        && !(lines[operationEnd] ==~ /^    (get|post|put|patch|delete|options|head|trace):\s*$/)
+                        && !(lines[operationEnd] ==~ /^  \/[^:]+:\s*$/)
+                        && !(lines[operationEnd] ==~ /^[^ ]/)) {
+                    operationEnd++
+                }
+
+                def alreadySecured = lines.subList(index + 1, operationEnd).any {
+                    it ==~ /^      security:\s*$/
+                }
+                if (!alreadySecured) {
+                    insertAfter << index
+                }
+            }
+        }
+
+        insertAfter.reverseEach { index ->
+            lines.addAll(index + 1, [
+                    '      security:',
+                    '      - bearerAuthJWT: []'
+            ])
+        }
+        apiSpecFile.setText(lines.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
     }
+}
+
+tasks.named('bootJar') {
+    dependsOn tasks.named('applyOpenApiSecurity')
+    dependsOn asciidoctor
+    from(openapiOutputDir) {
+        into 'BOOT-INF/classes/static'
+    }
+    from ("${asciidoctor.outputDir}") {
+        into 'BOOT-INF/classes/static/docs'
+    }
+}
+
+tasks.register('verifyOpenApiInBootJar') {
+    dependsOn bootJar
+
+    doLast {
+        def jarFile = tasks.named('bootJar').get().archiveFile.get().asFile
+        def openapiFile = zipTree(jarFile).matching {
+            include 'BOOT-INF/classes/static/openapi3.yaml'
+        }.singleFile
+        def openapi = openapiFile.getText('UTF-8')
+
+        if (!openapi.contains('  /api/app-status:')) {
+            throw new GradleException('bootJar의 OpenAPI 문서에 /api/app-status가 없습니다')
+        }
+
+        if (!openapi.contains('    bearerAuthJWT:')) {
+            throw new GradleException('bootJar의 OpenAPI 문서에 bearer 인증 스키마가 없습니다')
+        }
+
+        def appStatusStart = openapi.indexOf('  /api/app-status:')
+        def appStatusEnd = openapi.indexOf('\n  /api/', appStatusStart + 1)
+        if (appStatusEnd < 0) {
+            appStatusEnd = openapi.length()
+        }
+        def appStatusOperation = openapi.substring(appStatusStart, appStatusEnd)
+        if (appStatusOperation.contains('\n      security:')) {
+            throw new GradleException('/api/app-status는 공개 API여야 합니다')
+        }
+
+        def authMeStart = openapi.indexOf('  /api/auth/me:')
+        def authMeEnd = openapi.indexOf('\n  /api/', authMeStart + 1)
+        if (authMeEnd < 0) {
+            authMeEnd = openapi.length()
+        }
+        def authMeOperation = openapi.substring(authMeStart, authMeEnd)
+        if (!authMeOperation.contains('\n      security:')) {
+            throw new GradleException('/api/auth/me에 bearer 인증 정보가 없습니다')
+        }
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('verifyOpenApiInBootJar')
 }

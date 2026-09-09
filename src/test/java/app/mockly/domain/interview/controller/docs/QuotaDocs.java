@@ -26,6 +26,7 @@ public class QuotaDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 쿼터 조회")
                 .description("현재 플랜의 일일 면접 쿼터와 오늘 사용 현황을 조회합니다.")

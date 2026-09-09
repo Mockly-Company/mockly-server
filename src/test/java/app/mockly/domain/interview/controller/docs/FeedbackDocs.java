@@ -34,6 +34,7 @@ public class FeedbackDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("면접 피드백 조회")
                 .description("면접 세션의 피드백 상태와 데이터를 조회합니다. COMPLETED이면 피드백 데이터 포함, PENDING/GENERATING이면 202, FAILED이면 오류 메시지 포함.")
@@ -44,6 +45,7 @@ public class FeedbackDocs {
 
     public static ResourceSnippetParameters notFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("RESOURCE_NOT_FOUND"))
                 .build();

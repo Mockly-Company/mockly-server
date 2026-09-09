@@ -30,6 +30,7 @@ public class SubmitAnswerDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .summary("답변 제출")
                 .description("면접 질문에 대한 답변을 제출합니다. 마지막 답변이면 FEEDBACK_PENDING 상태를 반환하고 피드백은 비동기로 생성됩니다. 피드백 완료는 GET /{sessionId}/feedback/events SSE로 수신합니다.")
@@ -41,6 +42,7 @@ public class SubmitAnswerDocs {
 
     public static ResourceSnippetParameters feedbackPending() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .requestHeaders(REQUEST_HEADERS)
                 .requestFields(REQUEST_FIELDS)
@@ -50,6 +52,7 @@ public class SubmitAnswerDocs {
 
     public static ResourceSnippetParameters alreadyCompleted() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("VALIDATION_ERROR"))
                 .build();
@@ -57,6 +60,7 @@ public class SubmitAnswerDocs {
 
     public static ResourceSnippetParameters notFound() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .tag("Interview")
                 .responseFields(ApiResponseDocs.errorResponse("RESOURCE_NOT_FOUND"))
                 .build();

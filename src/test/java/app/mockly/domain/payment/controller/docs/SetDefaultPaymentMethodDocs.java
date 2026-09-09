@@ -22,6 +22,7 @@ public class SetDefaultPaymentMethodDocs {
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
+                .privateResource(true)
                 .summary("기본 결제 수단 변경")
                 .description("지정한 결제 수단을 기본 결제 수단으로 설정합니다. 기존 기본 결제 수단은 자동으로 일반 결제 수단으로 변경됩니다. 이미 기본 결제 수단인 경우 idempotent하게 동작합니다.")
                 .pathParameters(
