@@ -33,7 +33,7 @@ public class PortOneService {
      * 빌링키 조회 및 검증
      */
     public BillingKeyInfo getBillingKey(String billingKey) {
-        log.info("PortOne Billing Key 조회: {}", billingKey);
+        log.info("PortOne 빌링키 조회 시작");
 
         try {
             return portOneClient.getPayment().getBillingKey()
@@ -41,7 +41,7 @@ public class PortOneService {
                     .orTimeout(3, TimeUnit.SECONDS)
                     .join();
         } catch (Exception e) {
-            log.error("빌링키 조회 실패: {}", billingKey, e);
+            log.error("빌링키 조회 실패", e);
             // TODO: 다른 Exception으로 만들 필요가 있는지 확인 필요
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "유효하지 않은 빌링키입니다.");
         }
@@ -57,7 +57,7 @@ public class PortOneService {
             Currency currency,
             PaymentAmountInput amount
     ) {
-        log.info("Billing Key 결제 시작 - paymentId: {}, billingKey: {}", paymentId, billingKey);
+        log.info("빌링키 결제 시작 - paymentId: {}", paymentId);
 
         try {
             return portOneClient.getPayment().payWithBillingKey(

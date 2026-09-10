@@ -34,8 +34,10 @@ import java.math.BigDecimal;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -259,6 +261,30 @@ class SubscriptionControllerTest {
                 .andDo(document("subscription-cancel",
                         resource(SubscriptionDocs.cancelSuccess())
                 ));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/subscriptions/{id} - 실패: 결제 예약 취소 실패 시 활성 구독 유지")
+    void cancelSubscription_ScheduleRevokeFailureKeepsSubscriptionActive() throws Exception {
+        Subscription subscription = Subscription.create(testUser.getId(), basicMonthlyPlan);
+        subscription.activate();
+        subscription.setCurrentPaymentScheduleId("schedule-to-revoke");
+        subscription = subscriptionRepository.save(subscription);
+
+        willThrow(new app.mockly.global.exception.BusinessException(
+                app.mockly.global.common.ApiStatusCode.INTERNAL_SERVER_ERROR,
+                "결제 예약 취소 도중 오류가 발생했습니다."
+        )).given(portOneService).revokePaymentSchedule("schedule-to-revoke");
+
+        mockMvc.perform(delete("/api/subscriptions/{id}", subscription.getId())
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.success").value(false));
+
+        Subscription persisted = subscriptionRepository.findById(subscription.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
     }
 
     @Test

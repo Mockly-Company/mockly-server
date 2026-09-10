@@ -85,20 +85,20 @@ public class WebhookService {
             subscription.activate();
             try {
                 subscriptionService.createFirstPaymentSchedule(subscription, billingKey);
-                log.info("첫 결제 완료 및 구독 활성화 (Webhook 보정): {}, billingKey: {}", subscription.getId(), billingKey);
+                log.info("첫 결제 완료 및 구독 활성화 (Webhook 보정): {}", subscription.getId());
             } catch (Exception e) {
                 subscription.markAsPastDue();
-                log.error("첫 결제 스케줄 생성 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
-                        subscription.getId(), billingKey, e);
+                log.error("첫 결제 스케줄 생성 실패, 구독 PAST_DUE 전환 - subscriptionId: {}",
+                        subscription.getId(), e);
             }
         } else if (subscription.isActive() && !subscription.isCanceled()) { // 갱신 결제: 구독 갱신 + 다음 스케줄 생성
             try {
                 subscriptionService.renewSubscription(subscription, billingKey);
-                log.info("구독 갱신 완료 (Webhook): {}, billingKey: {}", subscription.getId(), billingKey);
+                log.info("구독 갱신 완료 (Webhook): {}", subscription.getId());
             } catch (Exception e) {
                 subscription.markAsPastDue();
-                log.error("구독 갱신 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
-                        subscription.getId(), billingKey, e);
+                log.error("구독 갱신 실패, 구독 PAST_DUE 전환 - subscriptionId: {}",
+                        subscription.getId(), e);
             }
         }
     }

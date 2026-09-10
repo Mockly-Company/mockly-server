@@ -9,7 +9,6 @@ import app.mockly.domain.product.service.SubscriptionService;
 import app.mockly.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/subscriptions")
 @RequiredArgsConstructor
@@ -29,12 +27,6 @@ public class SubscriptionController {
             @RequestBody @Valid CreateSubscriptionRequest request,
             @AuthenticationPrincipal UUID userId) {
         CreateSubscriptionResponse response = subscriptionService.createSubscription(userId, request); // tx1: 결제 + Outbox 저장
-
-        try {
-            subscriptionService.processScheduleCreation(response.id()); // tx2: 스케줄 생성 (Outbox Polling)
-        } catch (Exception e) {
-            log.error("스케줄 생성 실패, Outbox 재시도 예정 - subscriptionId: {}", response.id(), e);
-        }
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response));
