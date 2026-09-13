@@ -24,11 +24,22 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     @Query("""
             SELECT s FROM Subscription s
                 JOIN FETCH s.subscriptionPlan sp
-            WHERE s.userId = :userId
-                AND sp.id = :planId
-                AND s.status = :status
+                JOIN FETCH sp.product p
+            WHERE s.userId = :userId AND s.currentMarker = true
             """)
-    Optional<Subscription> findByUserIdAndPlanIdAndStatus(UUID userId, Integer planId, SubscriptionStatus status);
+    Optional<Subscription> findCurrentByUserId(UUID userId);
 
-    List<Subscription> findByStatusAndUpdatedAtBefore(SubscriptionStatus status, Instant cutoff);
+    List<Subscription> findByStatusAndPastDueAtLessThanEqual(SubscriptionStatus status, Instant cutoff);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END
+            FROM Subscription s
+                JOIN s.subscriptionPlan sp
+                JOIN sp.product p
+            WHERE s.userId = :userId
+              AND p.planTier <> app.mockly.domain.product.entity.PlanTier.FREE
+              AND s.activatedAt IS NOT NULL
+              AND s.activatedAt >= :feedbackGenerationStartedAt
+            """)
+    boolean existsActivatedPaidSubscriptionAfter(UUID userId, Instant feedbackGenerationStartedAt);
 }

@@ -7,6 +7,7 @@ public enum SubscriptionStatus {
     PENDING("대기"),
     ACTIVE("활성"),
     PAST_DUE("연체"),
+    UNPAID("미납"),
     CANCELED("해지"),
     EXPIRED("만료");
 

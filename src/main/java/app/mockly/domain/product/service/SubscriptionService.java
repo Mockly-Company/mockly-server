@@ -1,6 +1,7 @@
 package app.mockly.domain.product.service;
 
 import app.mockly.domain.payment.client.PortOneService;
+import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.payment.entity.*;
 import app.mockly.domain.payment.repository.InvoiceRepository;
 import app.mockly.domain.payment.repository.OutboxEventRepository;
@@ -35,6 +36,8 @@ public class SubscriptionService {
     private final PaymentScheduleService paymentScheduleService;
 
     private final SubscriptionRepository subscriptionRepository;
+    private final CurrentSubscriptionService currentSubscriptionService;
+    private final UserRepository userRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
@@ -69,21 +72,14 @@ public class SubscriptionService {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "플랜 가격이 일치하지 않습니다.");
         }
 
-        // 동일 플랜 중복 구독 확인
-        subscriptionRepository.findByUserIdAndPlanIdAndStatus(userId, planId, SubscriptionStatus.ACTIVE)
-                .ifPresent(existing -> {
-                    throw new BusinessException(ApiStatusCode.BAD_REQUEST, "이미 해당 플랜을 구독중입니다.");
-                });
-
-        // 기존 구독 확인 및 취소
-        subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .ifPresent(currentPlan -> {
-                    if (currentPlan.getSubscriptionPlan().isFree()) {
-                        currentPlan.cancel();
-                    } else {
-                        throw new BusinessException(ApiStatusCode.BAD_REQUEST, "이미 구독중인 플랜이 있습니다. 구독 변경 API를 사용하세요.");
-                    }
-                });
+        lockUser(userId);
+        currentSubscriptionService.findCurrentSubscription(userId).ifPresent(currentSubscription -> {
+            if (!currentSubscription.isActive() || !currentSubscription.getSubscriptionPlan().isFree()) {
+                throw new BusinessException(ApiStatusCode.BAD_REQUEST, "이미 현재 구독이 있습니다.");
+            }
+            currentSubscription.cancel();
+            subscriptionRepository.flush();
+        });
 
         // Subscription(PENDING) + Invoice(PENDING) + Payment(PENDING) 생성
         Subscription subscription = Subscription.create(userId, subscriptionPlan);
@@ -129,9 +125,7 @@ public class SubscriptionService {
     }
 
     public GetSubscriptionResponse getMySubscription(UUID userId) {
-        return subscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE)
-                .map(GetSubscriptionResponse::from)
-                .orElse(null);
+        return GetSubscriptionResponse.from(currentSubscriptionService.getCurrentSubscription(userId));
     }
 
     @Transactional
@@ -165,13 +159,23 @@ public class SubscriptionService {
         return CancelSubscriptionResponse.from(subscription);
     }
 
+    @Transactional
     public void assignFreePlan(UUID userId) {
-        subscriptionPlanRepository.findByBillingCycle(BillingCycle.LIFETIME)
+        lockUser(userId);
+        if (currentSubscriptionService.findCurrentSubscription(userId).isPresent()) {
+            return;
+        }
+        subscriptionPlanRepository.findActiveByPlanTierAndBillingCycle(PlanTier.FREE, BillingCycle.MONTHLY)
                 .ifPresent(freePLan -> {
                     Subscription subscription = Subscription.create(userId, freePLan);
                     subscription.activate();
                     subscriptionRepository.save(subscription);
                 });
+    }
+
+    private void lockUser(UUID userId) {
+        userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
     }
 
     @Transactional

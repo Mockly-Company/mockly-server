@@ -6,13 +6,10 @@ import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.interview.entity.ExperienceLevel;
 import app.mockly.domain.interview.entity.InterviewMessage;
-import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewType;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
-import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
-import app.mockly.domain.product.entity.PlanTier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,15 +35,12 @@ public class LoadTestDataSeeder implements ApplicationRunner {
     private final UserRepository userRepository;
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
-    private final InterviewQuotaRepository interviewQuotaRepository;
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
         log.info("[LoadTest] 데이터 시딩 시작 — {} 사용자 × {} 세션", USER_COUNT, SESSIONS_PER_USER);
-
-        seedQuota();
 
         List<Map<String, Object>> fixtures = new ArrayList<>();
 
@@ -74,16 +68,6 @@ public class LoadTestDataSeeder implements ApplicationRunner {
         }
 
         log.info("[LoadTest] 데이터 시딩 완료 — {} 세션 생성, loadtest-fixtures.json 출력", USER_COUNT * SESSIONS_PER_USER);
-    }
-
-    private void seedQuota() {
-        if (interviewQuotaRepository.findById(PlanTier.FREE).isEmpty()) {
-            interviewQuotaRepository.save(InterviewQuota.builder()
-                    .planTier(PlanTier.FREE)
-                    .dailyLimit(5)
-                    .maxQuestionsPerSession(3)
-                    .build());
-        }
     }
 
     private User createUser(int index) {

@@ -1,12 +1,14 @@
 package app.mockly.domain.interview.entity;
 
 import app.mockly.domain.auth.entity.User;
+import app.mockly.domain.product.entity.PlanTier;
 import app.mockly.global.common.BaseEntity;
 import com.fasterxml.uuid.Generators;
 import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -51,8 +53,18 @@ public class InterviewSession extends BaseEntity {
 
     private Instant completedAt;
 
+    @Column(name = "ended_at")
+    private Instant endedAt;
+
     @Column(length = 100)
     private String firstQuestionKeyword;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "feedback_generation_tier", length = 16)
+    private PlanTier feedbackGenerationTier;
+
+    @Column(name = "feedback_generation_task_id", columnDefinition = "UUID")
+    private UUID feedbackGenerationTaskId;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
@@ -60,6 +72,9 @@ public class InterviewSession extends BaseEntity {
 
     @Column(length = 500)
     private String failReason;
+
+    @OneToOne(mappedBy = "session", fetch = FetchType.LAZY)
+    private InterviewFeedback feedback;
 
     public static InterviewSession create(User user, String position, ExperienceLevel experienceLevel,
                                           InterviewType interviewType, int totalQuestions, String selfIntroduction) {
@@ -79,34 +94,31 @@ public class InterviewSession extends BaseEntity {
         this.currentQuestionNumber++;
     }
 
-    public void startFeedbackGeneration() {
+    public void startFeedbackGeneration(PlanTier generationTier) {
         this.status = InterviewSessionStatus.FEEDBACK_PENDING;
         this.feedbackStatus = FeedbackStatus.PENDING;
-    }
-
-    public void markFeedbackGenerating() {
-        this.feedbackStatus = FeedbackStatus.GENERATING;
+        this.feedbackGenerationTier = generationTier;
+        if (this.endedAt == null) {
+            this.endedAt = Instant.now();
+        }
     }
 
     public void complete() {
         this.status = InterviewSessionStatus.COMPLETED;
         this.feedbackStatus = FeedbackStatus.COMPLETED;
+        this.feedbackGenerationTaskId = null;
         this.completedAt = Instant.now();
-    }
-
-    public void markFeedbackFailed(String reason) {
-        if (this.feedbackStatus == FeedbackStatus.COMPLETED) return;
-        this.feedbackStatus = FeedbackStatus.FAILED;
-        this.failReason = reason != null && reason.length() > 500 ? reason.substring(0, 500) : reason;
     }
 
     public void resetFeedbackStatus() {
         this.feedbackStatus = FeedbackStatus.PENDING;
+        this.feedbackGenerationTaskId = null;
         this.failReason = null;
     }
 
     public void abandon() {
         this.status = InterviewSessionStatus.ABANDONED;
+        this.endedAt = Instant.now();
     }
 
     public void setFirstQuestionKeyword(String keyword) {
@@ -119,6 +131,17 @@ public class InterviewSession extends BaseEntity {
 
     public boolean isInProgress() {
         return status == InterviewSessionStatus.IN_PROGRESS;
+    }
+
+    public Long getDurationSeconds() {
+        if (getCreatedAt() == null || endedAt == null) {
+            return null;
+        }
+        return Duration.between(getCreatedAt(), endedAt).getSeconds();
+    }
+
+    public Integer getOverallScore() {
+        return feedback == null ? null : feedback.getOverallScore();
     }
 
     @PrePersist

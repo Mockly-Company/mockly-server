@@ -1,0 +1,11 @@
+<context>
+<interview_type>%s</interview_type>
+</context>
+
+<conversation_json>
+%s
+</conversation_json>
+
+<task>
+지원자의 실제 답변만 근거로 구조화된 면접 피드백을 생성하세요.
+</task>

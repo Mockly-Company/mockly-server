@@ -40,6 +40,15 @@ public class SubscriptionProduct extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
+    @Column(name = "max_questions", nullable = false)
+    private int maxQuestions;
+
+    @Column(name = "weekly_interview_limit", nullable = false)
+    private int weeklyInterviewLimit;
+
+    @Column(name = "weekly_improvement_practice_limit", nullable = false)
+    private int weeklyImprovementPracticeLimit;
+
     @Builder.Default
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SubscriptionPlan> subscriptionPlans = new ArrayList<>();

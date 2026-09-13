@@ -21,16 +21,8 @@ public class RetryFeedbackDocs {
 
     private static final List<FieldDescriptor> RESPONSE_FIELDS = List.of(
             fieldWithPath("feedbackStatus").description("피드백 상태 (PENDING)").type(SimpleType.STRING),
-            fieldWithPath("feedback").description("피드백 데이터 (COMPLETED 시)").type(JsonFieldType.OBJECT).optional(),
-            fieldWithPath("feedback.overallScore").description("종합 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks").description("전문가별 평가 목록").type(JsonFieldType.ARRAY).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].expertRole").description("전문가 역할").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].score").description("전문가 평가 점수 (1~100)").type(SimpleType.NUMBER).optional(),
-            fieldWithPath("feedback.expertFeedbacks[].evaluation").description("전문가 평가 내용").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.strengths").description("전반적인 강점").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.improvements").description("전반적인 개선점").type(SimpleType.STRING).optional(),
-            fieldWithPath("feedback.detailedAnalysis").description("질문별 상세 분석 (PRO 플랜 전용)").type(SimpleType.STRING).optional(),
-            fieldWithPath("message").description("오류 메시지 (FAILED 시)").type(SimpleType.STRING).optional()
+            fieldWithPath("feedback").description("재시도 요청 시에는 null").type(JsonFieldType.OBJECT).optional(),
+            fieldWithPath("message").description("재시도 요청 시에는 null").type(SimpleType.STRING).optional()
     );
 
     public static ResourceSnippetParameters success() {

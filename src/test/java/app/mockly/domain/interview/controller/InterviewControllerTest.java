@@ -8,6 +8,7 @@ import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.interview.controller.docs.AbandonSessionDocs;
 import app.mockly.domain.interview.controller.docs.CreateInterviewDocs;
 import app.mockly.domain.interview.controller.docs.FeedbackDocs;
+import app.mockly.domain.interview.controller.docs.InterviewOverviewDocs;
 import app.mockly.domain.interview.controller.docs.QuotaDocs;
 import app.mockly.domain.interview.controller.docs.RetryFeedbackDocs;
 import app.mockly.domain.interview.controller.docs.SessionDetailDocs;
@@ -20,7 +21,6 @@ import app.mockly.domain.interview.dto.request.SubmitAnswerRequest;
 import app.mockly.domain.interview.entity.ExperienceLevel;
 import app.mockly.domain.interview.entity.InterviewFeedback;
 import app.mockly.domain.interview.entity.InterviewMessage;
-import app.mockly.domain.interview.entity.InterviewQuota;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
@@ -28,13 +28,21 @@ import app.mockly.domain.interview.entity.InterviewType;
 import reactor.core.publisher.Flux;
 import app.mockly.domain.interview.repository.InterviewFeedbackRepository;
 import app.mockly.domain.interview.repository.InterviewMessageRepository;
-import app.mockly.domain.interview.repository.InterviewQuotaRepository;
 import app.mockly.domain.interview.repository.InterviewSessionRepository;
 import app.mockly.domain.interview.service.FeedbackSseManager;
 import app.mockly.domain.interview.service.InterviewAiService;
+import app.mockly.domain.product.entity.BillingCycle;
+import app.mockly.domain.product.entity.Currency;
 import app.mockly.domain.product.entity.PlanTier;
+import app.mockly.domain.product.entity.SubscriptionPlan;
+import app.mockly.domain.product.entity.SubscriptionProduct;
+import app.mockly.domain.product.entity.Subscription;
+import app.mockly.domain.product.repository.SubscriptionPlanRepository;
+import app.mockly.domain.product.repository.SubscriptionProductRepository;
+import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,6 +59,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import java.util.List;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +69,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static app.mockly.domain.interview.FeedbackTestFixtures.feedbackResult;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -98,9 +110,6 @@ class InterviewControllerTest {
     private UserRepository userRepository;
 
     @Autowired
-    private InterviewQuotaRepository interviewQuotaRepository;
-
-    @Autowired
     private InterviewSessionRepository interviewSessionRepository;
 
     @Autowired
@@ -109,8 +118,21 @@ class InterviewControllerTest {
     @Autowired
     private InterviewMessageRepository interviewMessageRepository;
 
+    @Autowired
+    private SubscriptionProductRepository subscriptionProductRepository;
+
+    @Autowired
+    private SubscriptionPlanRepository subscriptionPlanRepository;
+
+    @Autowired
+    private SubscriptionRepository subscriptionRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
     private User testUser;
     private String validAccessToken;
+    private Subscription currentSubscription;
 
     @BeforeEach
     void setUp() {
@@ -131,20 +153,155 @@ class InterviewControllerTest {
         given(interviewAiService.generateNextQuestion(any(app.mockly.domain.interview.entity.InterviewSession.class), any()))
                 .willReturn(Flux.just("다음 면접 질문을 하겠습니다."));
         given(interviewAiService.generateFeedback(any(), any(InterviewType.class), any(PlanTier.class)))
-                .willReturn(new InterviewFeedbackResult(
-                        75,
-                        List.of(new InterviewFeedbackResult.ExpertFeedback("기술 면접관", 75, "전반적으로 기술적 이해도가 적절합니다.")),
-                        "논리적인 답변 구조를 보여주었습니다.",
-                        "더 구체적인 실무 경험을 제시하면 좋겠습니다.",
-                        null
-                ));
+                .willReturn(feedbackResult(PlanTier.FREE));
 
-        // InterviewQuota 초기 데이터 (FREE 플랜: 일일 1회, 최대 3문항)
-        interviewQuotaRepository.save(InterviewQuota.builder()
+        SubscriptionProduct freeProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Free")
                 .planTier(PlanTier.FREE)
-                .dailyLimit(1)
-                .maxQuestionsPerSession(3)
+                .isActive(true)
+                .maxQuestions(3)
+                .weeklyInterviewLimit(1)
+                .weeklyImprovementPracticeLimit(0)
                 .build());
+        SubscriptionPlan freePlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(freeProduct)
+                .price(BigDecimal.ZERO)
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        currentSubscription = Subscription.create(testUser.getId(), freePlan);
+        currentSubscription.activate();
+        currentSubscription = subscriptionRepository.save(currentSubscription);
+
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 실패: 미납 구독은 모든 면접 API 이용 정지 (402)")
+    void getQuota_unpaidSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        currentSubscription.markAsUnpaid();
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"))
+                .andDo(document("interview-get-quota-subscription-unpaid",
+                        resource(QuotaDocs.subscriptionUnpaid())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: 실제 면접·피드백으로 Overview 조회")
+    void getOverview_withInterviewHistory() throws Exception {
+        activateProSubscription();
+        Instant now = Instant.now();
+        InterviewSession previousSession = saveOverviewSession(
+                now.plus(10, ChronoUnit.MINUTES), 76, PlanTier.PRO);
+        InterviewSession latestSession = saveOverviewSession(
+                now.plus(20, ChronoUnit.MINUTES), 84, PlanTier.PRO);
+        interviewFeedbackRepository.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.summary.completedCount").value(2))
+                .andExpect(jsonPath("$.data.summary.totalPracticeSeconds").isNumber())
+                .andExpect(jsonPath("$.data.score.latest").value(84))
+                .andExpect(jsonPath("$.data.score.change").value(8))
+                .andExpect(jsonPath("$.data.recentInterviews.length()").value(2))
+                .andExpect(jsonPath("$.data.recentInterviews[0].sessionId")
+                        .value(latestSession.getId().toString()))
+                .andExpect(jsonPath("$.data.recentInterviews[0].overallScore").value(84))
+                .andExpect(jsonPath("$.data.recentInterviews[1].sessionId")
+                        .value(previousSession.getId().toString()))
+                .andExpect(jsonPath("$.data.recentInterviews[1].overallScore").value(76))
+                .andExpect(jsonPath("$.data.nextPracticePoint").value("결론부터 답변하기"))
+                .andDo(document("interview-get-overview",
+                        resource(InterviewOverviewDocs.success())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: Free는 저장된 Pro 연습 포인트를 노출하지 않음")
+    void getOverview_freePlanDoesNotExposeNextPracticePoint() throws Exception {
+        saveOverviewSession(Instant.now().plus(10, ChronoUnit.MINUTES), 80, PlanTier.PRO);
+        interviewFeedbackRepository.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.score.latest").value(80))
+                .andExpect(jsonPath("$.data.recentInterviews[0].overallScore").value(80))
+                .andExpect(jsonPath("$.data.nextPracticePoint").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 성공: 면접 이력이 없는 사용자의 Overview 조회")
+    void getOverview_withoutInterviewHistory() throws Exception {
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.summary.periodStart").isString())
+                .andExpect(jsonPath("$.data.summary.nextResetAt").isString())
+                .andExpect(jsonPath("$.data.summary.completedCount").value(0))
+                .andExpect(jsonPath("$.data.summary.totalPracticeSeconds").value(0))
+                .andExpect(jsonPath("$.data.score.latest").doesNotExist())
+                .andExpect(jsonPath("$.data.score.change").doesNotExist())
+                .andExpect(jsonPath("$.data.recentInterviews").isEmpty())
+                .andExpect(jsonPath("$.data.nextPracticePoint").doesNotExist())
+                .andDo(document("interview-get-overview-empty",
+                        resource(InterviewOverviewDocs.empty())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/overview - 실패: 미납 구독은 이용 정지 (402)")
+    void getOverview_unpaidSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        currentSubscription.markAsUnpaid();
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews/overview")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"))
+                .andDo(document("interview-get-overview-subscription-unpaid",
+                        resource(InterviewOverviewDocs.subscriptionUnpaid())
+                ));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews - 실패: 유예기간이 끝난 PAST_DUE도 즉시 이용 정지 (402)")
+    void getSessions_expiredPastDueSubscription() throws Exception {
+        currentSubscription.markAsPastDue(Instant.now().minus(8, ChronoUnit.DAYS));
+        subscriptionRepository.flush();
+
+        mockMvc.perform(get("/api/interviews")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.error").value("SUBSCRIPTION_UNPAID"));
+    }
+
+    @Test
+    @DisplayName("GET /api/interviews/quota - 실패: 결제 확정 전 PENDING 구독에는 권한을 부여하지 않음")
+    void getQuota_pendingSubscription() throws Exception {
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        subscriptionRepository.save(Subscription.create(testUser.getId(), currentSubscription.getSubscriptionPlan()));
+
+        mockMvc.perform(get("/api/interviews/quota")
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test
@@ -175,14 +332,8 @@ class InterviewControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/interviews - 실패: 일일 쿼터 초과 (429)")
+    @DisplayName("POST /api/interviews - 실패: 주간 쿼터 초과 (429)")
     void createSession_QuotaExceeded() throws Exception {
-        // 오늘 세션 1개 미리 생성 (FREE 플랜 한도: 1회)
-        interviewSessionRepository.save(InterviewSession.create(
-                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3,
-                "1년차 백엔드 개발자입니다."
-        ));
-
         CreateInterviewRequest request = new CreateInterviewRequest(
                 "프론트엔드 개발자",
                 ExperienceLevel.JUNIOR,
@@ -190,6 +341,12 @@ class InterviewControllerTest {
                 3,
                 "1년차 프론트엔드 개발자입니다."
         );
+
+        mockMvc.perform(post("/api/interviews")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/interviews")
                         .header("Authorization", "Bearer " + validAccessToken)
@@ -309,8 +466,11 @@ class InterviewControllerTest {
     @Test
     @DisplayName("GET /api/interviews - 성공: 세션 목록 조회")
     void getSessions_success() throws Exception {
-        interviewSessionRepository.save(InterviewSession.create(testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
-        interviewSessionRepository.save(InterviewSession.create(testUser, "프론트엔드 개발자", ExperienceLevel.MID, InterviewType.BEHAVIORAL, 3, "3년차 프론트엔드 개발자입니다."));
+        InterviewSession session = interviewSessionRepository.save(InterviewSession.create(
+                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR,
+                InterviewType.TECHNICAL, 3, "1년차 백엔드 개발자입니다."));
+        session.abandon();
+        interviewSessionRepository.flush();
 
         mockMvc.perform(get("/api/interviews")
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -318,9 +478,12 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sessions").isArray())
-                .andExpect(jsonPath("$.data.sessions.length()").value(2))
+                .andExpect(jsonPath("$.data.sessions.length()").value(1))
+                .andExpect(jsonPath("$.data.sessions[0].endedAt").isString())
+                .andExpect(jsonPath("$.data.sessions[0].durationSeconds").isNumber())
+                .andExpect(jsonPath("$.data.sessions[0].feedbackStatus").doesNotExist())
                 .andExpect(jsonPath("$.data.pagination.page").value(1))
-                .andExpect(jsonPath("$.data.pagination.totalElements").value(2))
+                .andExpect(jsonPath("$.data.pagination.totalElements").value(1))
                 .andDo(document("interview-get-sessions",
                         resource(SessionListDocs.success())
                 ));
@@ -365,12 +528,62 @@ class InterviewControllerTest {
         );
     }
 
+    private InterviewSession saveOverviewSession(Instant endedAt, int overallScore, PlanTier generatedTier) {
+        InterviewSession session = interviewSessionRepository.save(InterviewSession.builder()
+                .user(testUser)
+                .position("백엔드 개발자")
+                .experienceLevel(ExperienceLevel.JUNIOR)
+                .interviewType(InterviewType.TECHNICAL)
+                .totalQuestions(3)
+                .selfIntroduction("1년차 백엔드 개발자로 이커머스 서비스를 개발했습니다.")
+                .currentQuestionNumber(3)
+                .status(InterviewSessionStatus.COMPLETED)
+                .feedbackStatus(FeedbackStatus.COMPLETED)
+                .endedAt(endedAt)
+                .build());
+        InterviewFeedbackResult fixture = feedbackResult(generatedTier);
+        InterviewFeedbackResult result = new InterviewFeedbackResult(
+                overallScore,
+                fixture.coachBrief(),
+                fixture.scores(),
+                fixture.strengths(),
+                fixture.improvements(),
+                fixture.nextPracticePoint()
+        );
+        interviewFeedbackRepository.save(InterviewFeedback.create(session, result, generatedTier));
+        return session;
+    }
+
+    private void activateProSubscription() {
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        SubscriptionProduct proProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Pro")
+                .planTier(PlanTier.PRO)
+                .isActive(true)
+                .maxQuestions(10)
+                .weeklyInterviewLimit(10)
+                .weeklyImprovementPracticeLimit(4)
+                .build());
+        SubscriptionPlan proPlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(proProduct)
+                .price(BigDecimal.valueOf(9900))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription proSubscription = Subscription.create(testUser.getId(), proPlan);
+        proSubscription.activate();
+        subscriptionRepository.saveAndFlush(proSubscription);
+    }
+
     @Test
     @DisplayName("GET /api/interviews/:sessionId - 성공: 세션 상세 조회")
     void getSessionDetail_success() throws Exception {
         InterviewSession session = saveSession(1, 3, InterviewSessionStatus.IN_PROGRESS);
         interviewMessageRepository.save(InterviewMessage.createInterviewerMessage(session, "자기소개를 해주세요.", 1));
         interviewMessageRepository.save(InterviewMessage.createUserMessage(session, "안녕하세요, 저는 백엔드 개발자입니다.", 1));
+        session.abandon();
+        interviewSessionRepository.flush();
 
         mockMvc.perform(get("/api/interviews/{sessionId}", session.getId())
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -378,7 +591,9 @@ class InterviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sessionId").value(session.getId().toString()))
-                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.status").value("ABANDONED"))
+                .andExpect(jsonPath("$.data.endedAt").isString())
+                .andExpect(jsonPath("$.data.durationSeconds").isNumber())
                 .andExpect(jsonPath("$.data.messages.length()").value(2))
                 .andExpect(jsonPath("$.data.messages[0].role").value("INTERVIEWER"))
                 .andExpect(jsonPath("$.data.messages[1].role").value("USER"))
@@ -424,36 +639,45 @@ class InterviewControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/interviews/quota - 성공: FREE 플랜 쿼터 조회")
-    void getQuota_success() throws Exception {
+    @DisplayName("GET /api/interviews/quota - 성공: 현재 주간 이용기간 쿼터 조회")
+    void getQuota_returnsWeeklyUsagePeriod() throws Exception {
         mockMvc.perform(get("/api/interviews/quota")
                         .header("Authorization", "Bearer " + validAccessToken))
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.dailyLimit").value(1))
-                .andExpect(jsonPath("$.data.usedToday").value(0))
-                .andExpect(jsonPath("$.data.remaining").value(1))
-                .andExpect(jsonPath("$.data.maxQuestionsPerSession").value(3))
+                .andExpect(jsonPath("$.data.periodStart").isString())
+                .andExpect(jsonPath("$.data.nextResetAt").isString())
+                .andExpect(jsonPath("$.data.maxQuestions").value(3))
+                .andExpect(jsonPath("$.data.interview.limit").value(1))
+                .andExpect(jsonPath("$.data.interview.used").value(0))
+                .andExpect(jsonPath("$.data.interview.remaining").value(1))
+                .andExpect(jsonPath("$.data.improvementPractice.limit").value(0))
+                .andExpect(jsonPath("$.data.improvementPractice.used").value(0))
+                .andExpect(jsonPath("$.data.improvementPractice.remaining").value(0))
                 .andDo(document("interview-get-quota",
                         resource(QuotaDocs.success())
                 ));
     }
 
     @Test
-    @DisplayName("GET /api/interviews/quota - 성공: 오늘 세션 사용 후 남은 쿼터 조회")
+    @DisplayName("GET /api/interviews/quota - 성공: 주간 세션 사용 후 남은 쿼터 조회")
     void getQuota_afterUsed() throws Exception {
-        interviewSessionRepository.save(InterviewSession.create(
-                testUser, "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3,
-                "1년차 백엔드 개발자입니다."
-        ));
+        CreateInterviewRequest request = new CreateInterviewRequest(
+                "백엔드 개발자", ExperienceLevel.JUNIOR, InterviewType.TECHNICAL, 3,
+                "1년차 백엔드 개발자입니다.");
+        mockMvc.perform(post("/api/interviews")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/interviews/quota")
                         .header("Authorization", "Bearer " + validAccessToken))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.usedToday").value(1))
-                .andExpect(jsonPath("$.data.remaining").value(0));
+                .andExpect(jsonPath("$.data.interview.used").value(1))
+                .andExpect(jsonPath("$.data.interview.remaining").value(0));
     }
 
     @Test
@@ -461,12 +685,7 @@ class InterviewControllerTest {
     void getFeedback_success() throws Exception {
         InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
         interviewFeedbackRepository.save(InterviewFeedback.create(
-                session, 80,
-                "[{\"expertRole\":\"기술 면접관\",\"score\":80,\"evaluation\":\"전반적으로 좋습니다.\"}]",
-                "논리적인 답변 구조",
-                "더 구체적인 사례 제시 필요",
-                null
-        ));
+                session, feedbackResult(PlanTier.BASIC), PlanTier.BASIC));
 
         mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
                         .header("Authorization", "Bearer " + validAccessToken))
@@ -475,12 +694,59 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.feedbackStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.feedback.overallScore").value(80))
-                .andExpect(jsonPath("$.data.feedback.expertFeedbacks[0].expertRole").value("기술 면접관"))
-                .andExpect(jsonPath("$.data.feedback.strengths").value("논리적인 답변 구조"))
-                .andExpect(jsonPath("$.data.feedback.improvements").value("더 구체적인 사례 제시 필요"))
+                .andExpect(jsonPath("$.data.feedback.generatedTier").value("BASIC"))
+                .andExpect(jsonPath("$.data.feedback.coachBrief.summary").value("핵심 요약"))
+                .andExpect(jsonPath("$.data.feedback.coachBrief.keyStrength").value("핵심 강점"))
+                .andExpect(jsonPath("$.data.feedback.scores.structure").value(78))
+                .andExpect(jsonPath("$.data.feedback.strengths.length()").value(3))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].title").value("개선점 1"))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].detail").value("개선 상세 1"))
+                .andExpect(jsonPath("$.data.feedback.improvements[0].practiceAvailable").value(false))
+                .andExpect(jsonPath("$.data.feedback.expertFeedbacks").doesNotExist())
+                .andExpect(jsonPath("$.data.feedback.detailedAnalysis").doesNotExist())
                 .andDo(document("interview-get-feedback",
                         resource(FeedbackDocs.success())
                 ));
+    }
+
+    @Test
+    @DisplayName("과거 Free 피드백의 4축 점수는 이후 유료 구독 이력이 있으면 다운그레이드 후에도 공개한다")
+    void getFeedback_freeGeneratedAfterPaidHistory_exposesScoresPermanently() throws Exception {
+        InterviewSession session = saveSession(3, 3, InterviewSessionStatus.COMPLETED, FeedbackStatus.COMPLETED);
+        interviewFeedbackRepository.saveAndFlush(InterviewFeedback.create(
+                session, feedbackResult(PlanTier.FREE), PlanTier.FREE));
+
+        currentSubscription.cancel();
+        subscriptionRepository.flush();
+        SubscriptionProduct basicProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Basic")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .maxQuestions(5)
+                .weeklyInterviewLimit(4)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        SubscriptionPlan basicPlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(BigDecimal.valueOf(5900))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription paid = Subscription.create(testUser.getId(), basicPlan);
+        paid.activate();
+        subscriptionRepository.saveAndFlush(paid);
+        paid.cancel();
+        subscriptionRepository.flush();
+        Subscription newFree = Subscription.create(testUser.getId(), currentSubscription.getSubscriptionPlan());
+        newFree.activate();
+        subscriptionRepository.saveAndFlush(newFree);
+
+        mockMvc.perform(get("/api/interviews/{sessionId}/feedback", session.getId())
+                        .header("Authorization", "Bearer " + validAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.feedback.scores.structure").value(78))
+                .andExpect(jsonPath("$.data.feedback.strengths").isEmpty())
+                .andExpect(jsonPath("$.data.feedback.improvements[0].detail").isEmpty());
     }
 
     @Test

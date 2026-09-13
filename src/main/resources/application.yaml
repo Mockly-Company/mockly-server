@@ -14,12 +14,19 @@ spring:
   # JPA 설정
   jpa:
     hibernate:
-      ddl-auto: update # 데이터 유지 (테스트 환경에서만 create-drop 사용)
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+
+  sql:
+    init:
+      mode: never
 
   data:
     redis:

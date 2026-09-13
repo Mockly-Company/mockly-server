@@ -1,6 +1,7 @@
 package app.mockly.domain.interview.dto.response;
 
 import app.mockly.domain.interview.entity.ExperienceLevel;
+import app.mockly.domain.interview.entity.FeedbackStatus;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewSession;
 import app.mockly.domain.interview.entity.InterviewSessionStatus;
@@ -19,6 +20,10 @@ public record GetSessionDetailResponse(
         int currentQuestionNumber,
         InterviewSessionStatus status,
         Instant createdAt,
+        Instant endedAt,
+        Long durationSeconds,
+        Integer overallScore,
+        FeedbackStatus feedbackStatus,
         Instant completedAt,
         List<MessageDto> messages,
         FeedbackDto feedback
@@ -33,6 +38,10 @@ public record GetSessionDetailResponse(
                 session.getCurrentQuestionNumber(),
                 session.getStatus(),
                 session.getCreatedAt(),
+                session.getEndedAt(),
+                session.getDurationSeconds(),
+                session.getOverallScore(),
+                session.getFeedbackStatus(),
                 session.getCompletedAt(),
                 messages.stream().map(MessageDto::from).toList(),
                 feedback

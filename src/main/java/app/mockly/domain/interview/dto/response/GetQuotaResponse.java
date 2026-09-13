@@ -1,13 +1,26 @@
 package app.mockly.domain.interview.dto.response;
 
+import app.mockly.domain.interview.dto.WeeklyQuotaContext;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+
 public record GetQuotaResponse(
-        int dailyLimit,
-        int usedToday,
-        int remaining,
-        int maxQuestionsPerSession
+        OffsetDateTime periodStart,
+        OffsetDateTime nextResetAt,
+        int maxQuestions,
+        QuotaUsageInfo interview,
+        QuotaUsageInfo improvementPractice
 ) {
-    public static GetQuotaResponse of(int dailyLimit, long usedToday, int maxQuestionsPerSession) {
-        int used = (int) usedToday; // COUNT 결과, 일일 세션 수는 int 범위 초과 불가
-        return new GetQuotaResponse(dailyLimit, used, Math.max(0, dailyLimit - used), maxQuestionsPerSession);
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    public static GetQuotaResponse of(WeeklyQuotaContext context, int interviewUsed, int improvementUsed) {
+        return new GetQuotaResponse(
+                context.periodStart().atStartOfDay(KST).toOffsetDateTime(),
+                context.nextResetAt().atStartOfDay(KST).toOffsetDateTime(),
+                context.product().getMaxQuestions(),
+                QuotaUsageInfo.of(context.product().getWeeklyInterviewLimit(), interviewUsed, context.available()),
+                QuotaUsageInfo.of(context.product().getWeeklyImprovementPracticeLimit(), improvementUsed, context.available())
+        );
     }
 }

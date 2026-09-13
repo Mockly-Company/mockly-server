@@ -49,9 +49,9 @@ class AiFeedbackLatencyTest {
                 System.out.printf("[warmup %2d] %,d ms%n", i + 1, elapsed);
             } else {
                 durations.add(elapsed);
-                System.out.printf("[%3d/%d] %,d ms | score=%d experts=%d%n",
+                System.out.printf("[%3d/%d] %,d ms | score=%d improvements=%d%n",
                         i - WARMUP + 1, MEASUREMENT, elapsed,
-                        result.overallScore(), result.expertFeedbacks().size());
+                        result.overallScore(), result.improvements().size());
             }
         }
 
