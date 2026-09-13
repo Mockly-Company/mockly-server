@@ -15,9 +15,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 @SpringBootTest
 @Transactional
@@ -98,7 +100,7 @@ class FeedbackGenerationOwnershipIntegrationTest {
                 firstCompletionTime))
                 .isZero();
 
-        Instant secondCompletionTime = Instant.now();
+        Instant secondCompletionTime = Instant.parse("2026-09-14T00:00:00.123456789Z");
         assertThat(interviewSessionRepository.completeFeedbackIfOwned(
                 session.getId(),
                 secondTaskId,
@@ -112,6 +114,6 @@ class FeedbackGenerationOwnershipIntegrationTest {
         InterviewSession completed = interviewSessionRepository.findById(session.getId()).orElseThrow();
         assertThat(completed.getFeedbackStatus()).isEqualTo(FeedbackStatus.COMPLETED);
         assertThat(completed.getFeedbackGenerationTaskId()).isNull();
-        assertThat(completed.getCompletedAt()).isEqualTo(secondCompletionTime);
+        assertThat(completed.getCompletedAt()).isCloseTo(secondCompletionTime, within(1, ChronoUnit.MICROS));
     }
 }
