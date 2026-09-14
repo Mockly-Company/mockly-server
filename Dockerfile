@@ -13,6 +13,7 @@ RUN gradle dependencies --no-daemon || true
 
 COPY src src
 COPY deploy deploy
+COPY evals evals
 RUN ./gradlew clean verifyOpenApiInBootJar --no-daemon
 
 # 2) Runtime
