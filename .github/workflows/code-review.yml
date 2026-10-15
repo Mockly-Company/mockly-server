@@ -1,63 +1,34 @@
-name: Codex 코드 리뷰 트리거
+name: Muse Spark 코드 리뷰
 
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
 
 concurrency:
-  group: codex-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: muse-spark-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
-  trigger-codex-review:
-    if: github.event.pull_request.draft == false
+  muse-spark-review:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: write
 
     steps:
-      - name: base 브랜치에서 가이드라인만 체크아웃
+      - name: 코드 체크아웃
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.base.ref }}   # PR head가 아닌 base 기준
-          fetch-depth: 1
-          sparse-checkout: |
-            .claude/commands/review-backend.md
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
 
-      - name: 리뷰 가이드라인 읽기
-        id: guideline
-        run: |
-          {
-            echo 'body<<GUIDELINE_EOF'
-            cat .claude/commands/review-backend.md
-            echo
-            echo 'GUIDELINE_EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - name: '@codex review 코멘트 작성'
-        uses: actions/github-script@v8
+      - name: Muse Spark 리뷰
+        uses: actions/github-script@v7
         env:
-          GUIDELINE: ${{ steps.guideline.outputs.body }}
+          MODEL_API_KEY: ${{ secrets.MUSE_SPARK_API_KEY }}
         with:
-          github-token: ${{ secrets.CODEX_REVIEW_TOKEN }}
           script: |
-            const guideline = process.env.GUIDELINE;
-            const body = [
-              '@codex review',
-              '',
-              '아래 가이드라인에 따라 한국어로 리뷰해주세요. 결과는 🚨 필수 수정 / ⚠️ 권장 수정 / ✅ 좋은 점으로 분류하고, 변경된 파일 경로와 줄 번호를 명시해주세요.',
-              '',
-              '---',
-              '',
-              guideline,
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body,
-            });
+            const review = require('./.github/scripts/muse-spark-review.cjs');
+            await review({ github, context, core });
