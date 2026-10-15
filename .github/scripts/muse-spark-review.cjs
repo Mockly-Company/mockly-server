@@ -390,7 +390,7 @@ async function fetchThreads(github, owner, repo, number) {
       const reply = thread.replies.nodes[0];
       const login = reply?.author?.login ?? '';
       const isHumanReply =
-        reply && reply.databaseId !== root.databaseId && !/^github-actions|\[bot\]$/.test(login);
+        reply && reply.databaseId !== root.databaseId && !/^github-actions$|\[bot\]$/.test(login);
       threads.set(root.databaseId, {
         id: thread.id,
         isResolved: thread.isResolved,
@@ -403,6 +403,7 @@ async function fetchThreads(github, owner, repo, number) {
 }
 
 async function run({ github, context, core }) {
+  if (!process.env.MODEL_API_KEY) throw new Error('MODEL_API_KEY 시크릿이 없습니다.');
   const { owner, repo } = context.repo;
   const pr = context.payload.pull_request;
   const headSha = pr.head.sha;
