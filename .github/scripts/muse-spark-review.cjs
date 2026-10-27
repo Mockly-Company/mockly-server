@@ -8,11 +8,10 @@ const BOT_LOGIN = 'github-actions[bot]';
 const MARKER = '<!-- muse-spark-review -->';
 const STATE_PATTERN = /<!-- muse-spark-state:([A-Za-z0-9+/=]+) -->/;
 const EXCLUDES = [
-  ':(exclude)gradle/wrapper/**',
-  ':(exclude)gradlew',
-  ':(exclude)gradlew.bat',
-  ':(exclude)**/build/**',
+  ':(exclude)pnpm-lock.yaml',
+  ':(exclude)**/*.snap',
   ':(exclude)**/*.zip',
+  ':(exclude)**/dist/**',
 ];
 const MAX_DIFF_CHARS = 600000;
 const MAX_COMMENT_CHARS = 65000;
@@ -41,6 +40,37 @@ const RESOLVE_MUTATION = `
   mutation($id: ID!) {
     resolveReviewThread(input: { threadId: $id }) { thread { isResolved } }
   }`;
+
+// GITHUB_TOKEN으로는 resolveReviewThread가 거부되므로("Resource not accessible
+// by integration") 별도 PAT(RESOLVE_TOKEN)가 있을 때만 스레드를 닫는다.
+let resolveWarned = false;
+async function resolveThread(core, id) {
+  const token = process.env.RESOLVE_TOKEN;
+  if (!token) {
+    if (!resolveWarned) {
+      resolveWarned = true;
+      core.warning(
+        'RESOLVE_TOKEN 시크릿이 없어 review thread 자동 resolve를 건너뜁니다. 대화는 직접 닫아주세요.'
+      );
+    }
+    return;
+  }
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: RESOLVE_MUTATION, variables: { id } }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.errors) {
+    throw new Error(
+      `스레드 resolve 실패: ${res.status} ${(json.errors ?? []).map(e => e.message).join('; ').slice(0, 300)}`
+    );
+  }
+}
 
 const SYSTEM_PROMPT = `아래 가이드라인에 따라 PR을 한국어로 리뷰하세요.
 
@@ -87,6 +117,7 @@ function commitExists(sha) {
 
 function parseDiff(diff) {
   const validLines = {};
+  const addedLines = {};
   const out = [];
   let path = null;
   let right = 0;
@@ -115,6 +146,7 @@ function parseDiff(diff) {
     }
     if (path && right > 0 && (line.startsWith('+') || line.startsWith(' '))) {
       (validLines[path] ??= new Set()).add(right);
+      if (line.startsWith('+')) (addedLines[path] ??= new Set()).add(right);
       out.push(`${String(right).padStart(6)} ${line}`);
       right++;
       continue;
@@ -126,7 +158,7 @@ function parseDiff(diff) {
   if (annotated.length > MAX_DIFF_CHARS) {
     annotated = `${annotated.slice(0, MAX_DIFF_CHARS)}\n... (diff가 너무 길어 이후 생략)`;
   }
-  return { annotated, validLines };
+  return { annotated, validLines, addedLines };
 }
 
 function parseState(body) {
@@ -263,7 +295,7 @@ async function callModel(core, messages) {
       return parseModelJson(message);
     } catch (error) {
       if (attempt >= 3 || error.retryable === false) throw error;
-      core.warning(`Muse Spark 요청 재시도 (${attempt}/2): ${error.message}`);
+      core.warning(`Muse Spark 요청 재시도 (${attempt}/3): ${error.message}`);
       await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
     }
   }
@@ -379,10 +411,18 @@ function renderFitted(state, newIds) {
 
 async function fetchThreads(github, owner, repo, number) {
   const threads = new Map();
-  let after = null;
+  let after;
   do {
-    const data = await github.graphql(THREADS_QUERY, { owner, repo, number, after });
-    const page = data.repository.pullRequest.reviewThreads;
+    const data = await github.graphql(THREADS_QUERY, {
+      owner,
+      repo,
+      number,
+      after: after ?? undefined,
+    });
+    const page = data.repository.pullRequest.reviewThreads ?? {
+      nodes: [],
+      pageInfo: { hasNextPage: false, endCursor: null },
+    };
     for (const thread of page.nodes) {
       const root = thread.comments.nodes[0];
       if (!root) continue;
@@ -495,7 +535,7 @@ async function run({ github, context, core }) {
           body: `✅ 해결됨${reason ? `: ${reason}` : ''}`,
         });
       }
-      await github.graphql(RESOLVE_MUTATION, { id: thread.id });
+      await resolveThread(core, thread.id);
     } catch (error) {
       core.warning(`${issue.id} 스레드 resolve 실패: ${error.message}`);
     }
@@ -503,13 +543,15 @@ async function run({ github, context, core }) {
 
   const newIds = new Set();
   for (const item of review.issues) {
+    if (item.path && !fullDiff.validLines[item.path]) continue;
+    if (item.line && !fullDiff.validLines[item.path]?.has(item.line)) item.line = null;
     const issue = {
       id: `${SEVERITY[item.severity].prefix}${state.nextId[item.severity]++}`,
       ...item,
       status: 'open',
     };
     newIds.add(issue.id);
-    if (issue.severity === 'must' && fullDiff.validLines[issue.path]?.has(issue.line)) {
+    if (issue.severity === 'must' && fullDiff.addedLines[issue.path]?.has(issue.line)) {
       try {
         const { data } = await github.rest.pulls.createReviewComment({
           owner,
