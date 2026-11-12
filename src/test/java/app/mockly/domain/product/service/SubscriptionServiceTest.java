@@ -4,8 +4,12 @@ import app.mockly.domain.auth.entity.OAuth2Provider;
 import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.payment.client.PortOneService;
+import app.mockly.domain.payment.entity.OutboxEventStatus;
 import app.mockly.domain.payment.entity.PaymentMethod;
+import app.mockly.domain.payment.repository.InvoiceRepository;
+import app.mockly.domain.payment.repository.OutboxEventRepository;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
+import app.mockly.domain.payment.repository.PaymentRepository;
 import app.mockly.domain.product.dto.request.CreateSubscriptionPlanChangeRequest;
 import app.mockly.domain.product.dto.response.CancelSubscriptionResponse;
 import app.mockly.domain.product.dto.response.CreateSubscriptionPlanChangeResponse;
@@ -20,20 +24,27 @@ import app.mockly.domain.product.entity.SubscriptionStatus;
 import app.mockly.domain.product.repository.SubscriptionPlanRepository;
 import app.mockly.domain.product.repository.SubscriptionProductRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
+import app.mockly.global.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest
@@ -57,6 +68,15 @@ class SubscriptionServiceTest {
 
     @Autowired
     private PaymentMethodRepository paymentMethodRepository;
+
+    @Autowired
+    private InvoiceRepository invoiceRepository;
+
+    @Autowired
+    private PaymentRepository paymentRepository;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
 
     @MockitoBean
     private PortOneService portOneService;
@@ -353,5 +373,151 @@ class SubscriptionServiceTest {
         Subscription renewed = subscriptionRepository.findByIdWithDetails(proSub.getId()).orElseThrow();
         assertThat(renewed.getSubscriptionPlan().getId()).isEqualTo(basicPlan.getId());
         assertThat(renewed.getScheduledPlan()).isNull();
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void updatePaymentMethod_delinquentRecoveryFailure_runsOutsideTxAndKeepsExistingSchedule() {
+        User user = userRepository.save(User.builder()
+                .provider(OAuth2Provider.GOOGLE)
+                .providerId("non-tx-delinquent-provider")
+                .email("non-tx-delinquent@example.com")
+                .name("트랜잭션 분리 연체 사용자")
+                .build());
+        SubscriptionProduct basicProduct = productRepository.save(SubscriptionProduct.builder()
+                .name("Basic NonTx")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .maxQuestions(5)
+                .weeklyInterviewLimit(4)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        SubscriptionPlan basicPlan = planRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(new BigDecimal("5900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription pastDue = Subscription.create(user.getId(), basicPlan);
+        pastDue.activate();
+        pastDue.markAsPastDue(Instant.parse("2026-08-10T00:00:00Z"));
+        pastDue.setCurrentPaymentScheduleId("existing_portone_schedule_id");
+        pastDue = subscriptionRepository.save(pastDue);
+
+        PaymentMethod newMethod = paymentMethodRepository.save(
+                PaymentMethod.create(user, "non_tx_recovery_billing_key", "9876****1234", "VISA", true)
+        );
+
+        Long subscriptionId = pastDue.getId();
+        AtomicBoolean txActiveDuringPortOneCall = new AtomicBoolean(true);
+
+        try {
+            doAnswer(invocation -> {
+                txActiveDuringPortOneCall.set(TransactionSynchronizationManager.isActualTransactionActive());
+                throw new RuntimeException("PortOne timeout");
+            }).when(portOneService).payWithBillingKey(anyString(), anyString(), anyString(), any(), any());
+
+            assertThatThrownBy(() -> subscriptionService.updatePaymentMethod(user.getId(), subscriptionId, newMethod.getId()))
+                    .isInstanceOf(BusinessException.class);
+
+            assertThat(txActiveDuringPortOneCall.get()).isFalse();
+            verify(portOneService, never()).revokePaymentSchedule(anyString());
+
+            Subscription unchanged = subscriptionRepository.findById(subscriptionId).orElseThrow();
+            assertThat(unchanged.getStatus()).isEqualTo(SubscriptionStatus.PAST_DUE);
+            assertThat(unchanged.getCurrentPaymentScheduleId()).isEqualTo("existing_portone_schedule_id");
+        } finally {
+            paymentRepository.deleteAll();
+            invoiceRepository.deleteAll();
+            outboxEventRepository.deleteAll();
+            subscriptionRepository.deleteById(subscriptionId);
+            paymentMethodRepository.deleteById(newMethod.getId());
+            planRepository.deleteById(basicPlan.getId());
+            productRepository.deleteById(basicProduct.getId());
+            userRepository.deleteById(user.getId());
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void changeSubscriptionPlan_upgradeRunsPortOneOutsideTxAndRetainsPendingOutboxWhenScheduleFails() {
+        User user = userRepository.save(User.builder()
+                .provider(OAuth2Provider.GOOGLE)
+                .providerId("non-tx-upgrade-provider")
+                .email("non-tx-upgrade@example.com")
+                .name("트랜잭션 분리 업그레이드 사용자")
+                .build());
+        SubscriptionProduct basicProduct = productRepository.save(SubscriptionProduct.builder()
+                .name("Basic Upgrade NonTx")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .maxQuestions(5)
+                .weeklyInterviewLimit(4)
+                .weeklyImprovementPracticeLimit(0)
+                .build());
+        SubscriptionPlan basicPlan = planRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(new BigDecimal("5900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        SubscriptionProduct proProduct = productRepository.save(SubscriptionProduct.builder()
+                .name("Pro Upgrade NonTx")
+                .planTier(PlanTier.PRO)
+                .isActive(true)
+                .maxQuestions(7)
+                .weeklyInterviewLimit(10)
+                .weeklyImprovementPracticeLimit(4)
+                .build());
+        SubscriptionPlan proPlan = planRepository.save(SubscriptionPlan.builder()
+                .product(proProduct)
+                .price(new BigDecimal("9900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        PaymentMethod method = paymentMethodRepository.save(
+                PaymentMethod.create(user, "non_tx_upgrade_billing_key", "1111****2222", "VISA", true)
+        );
+        Subscription activeBasic = Subscription.create(user.getId(), basicPlan, method);
+        activeBasic.activate();
+        activeBasic = subscriptionRepository.save(activeBasic);
+
+        Long subscriptionId = activeBasic.getId();
+        AtomicBoolean txActiveDuringPay = new AtomicBoolean(true);
+
+        try {
+            doAnswer(invocation -> {
+                txActiveDuringPay.set(TransactionSynchronizationManager.isActualTransactionActive());
+                return null;
+            }).when(portOneService).payWithBillingKey(anyString(), anyString(), anyString(), any(), any());
+
+            given(portOneService.createPaymentSchedule(anyString(), anyString(), anyString(), any(), any(), any()))
+                    .willThrow(new RuntimeException("PortOne schedule API transient error"));
+
+            GetSubscriptionPlanChangeResponse preview = subscriptionService.previewPlanChange(user.getId(), proPlan.getId());
+            CreateSubscriptionPlanChangeResponse response = subscriptionService.changeSubscriptionPlan(
+                    user.getId(),
+                    new CreateSubscriptionPlanChangeRequest(proPlan.getId(), preview.immediateAmount())
+            );
+
+            assertThat(txActiveDuringPay.get()).isFalse();
+            assertThat(response.subscription().planSnapshot().name()).isEqualTo("Pro Upgrade NonTx");
+            assertThat(outboxEventRepository.findByAggregateIdAndEventTypeAndStatus(
+                    subscriptionId,
+                    "SCHEDULE_CREATE",
+                    OutboxEventStatus.PENDING
+            )).isPresent();
+        } finally {
+            paymentRepository.deleteAll();
+            invoiceRepository.deleteAll();
+            outboxEventRepository.deleteAll();
+            subscriptionRepository.deleteById(subscriptionId);
+            paymentMethodRepository.deleteById(method.getId());
+            planRepository.deleteById(proPlan.getId());
+            planRepository.deleteById(basicPlan.getId());
+            productRepository.deleteById(proProduct.getId());
+            productRepository.deleteById(basicProduct.getId());
+            userRepository.deleteById(user.getId());
+        }
     }
 }

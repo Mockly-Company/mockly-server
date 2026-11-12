@@ -48,6 +48,9 @@ portone:
   channel-key: test-channel-key
   webhook-secret: test-webhook-secret
 
+payment:
+  billing-key-encryption-secret: test-billing-key-encryption-secret-at-least-32-chars
+
 app-policy:
   platforms:
     android:

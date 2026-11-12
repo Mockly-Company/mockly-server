@@ -61,9 +61,8 @@ public record CreateSubscriptionPlanChangeResponse(
         String scheduledPlanName = subscription.getScheduledPlan() != null
                 ? subscription.getScheduledPlan().getProduct().getName()
                 : null;
-        LocalDateTime endedAt = subscription.getCurrentPeriodEnd() != null
-                ? subscription.getCurrentPeriodEnd().minusDays(1).withHour(23).withMinute(59).withSecond(59)
-                : null;
+        // 이용 종료 시각은 CancelSubscriptionResponse.availableUntil과 동일한 end-exclusive 기준(currentPeriodEnd) 사용
+        LocalDateTime endedAt = subscription.getCurrentPeriodEnd();
 
         return new CreateSubscriptionPlanChangeResponse(
                 normalizeAmount(chargedAmount),

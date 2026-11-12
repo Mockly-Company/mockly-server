@@ -130,4 +130,32 @@ class CanceledPeriodEndSubscriptionJobTest {
         assertThat(reloaded.isCancelAtPeriodEnd()).isTrue();
         assertThat(reloaded.isCurrent()).isTrue();
     }
+
+    @Test
+    @DisplayName("만료 해지 전환이 중복 호출되더라도 조건부 원자 업데이트로 Free 구독은 단 1개만 생성된다")
+    void processExpiredCancelAtPeriodEndSubscriptions_isIdempotentAcrossRepeatedRuns() {
+        User user = userRepository.save(User.builder()
+                .provider(OAuth2Provider.GOOGLE)
+                .providerId("idempotent-expired-cancel-user")
+                .email("idempotent-cancel@example.com")
+                .name("멱등 만료 해지 사용자")
+                .build());
+
+        Subscription paidSubscription = Subscription.create(user.getId(), basicPlan);
+        paidSubscription.activate();
+        paidSubscription.scheduleCancelAtPeriodEnd();
+        ReflectionTestUtils.setField(paidSubscription, "currentPeriodEnd", LocalDateTime.now().minusHours(1));
+        paidSubscription = subscriptionRepository.saveAndFlush(paidSubscription);
+
+        LocalDateTime now = LocalDateTime.now();
+        job.processExpiredCancelAtPeriodEndSubscriptions(now);
+        job.processExpiredCancelAtPeriodEndSubscriptions(now);
+
+        long activeSubscriptionsCount = subscriptionRepository.findAll().stream()
+                .filter(sub -> sub.getUserId().equals(user.getId()))
+                .filter(sub -> sub.getStatus() == SubscriptionStatus.ACTIVE)
+                .count();
+
+        assertThat(activeSubscriptionsCount).isEqualTo(1L);
+    }
 }

@@ -2,7 +2,9 @@ package app.mockly.domain.product.repository;
 
 import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.entity.SubscriptionStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -51,17 +53,38 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     List<Subscription> findByStatusAndPastDueAtLessThanEqual(SubscriptionStatus status, Instant cutoff);
 
     @Query("""
-            SELECT s FROM Subscription s
-                JOIN FETCH s.subscriptionPlan sp
-                JOIN FETCH sp.product p
+            SELECT s.id FROM Subscription s
             WHERE s.status = :status
               AND s.cancelAtPeriodEnd = true
               AND s.currentPeriodEnd IS NOT NULL
               AND s.currentPeriodEnd <= :cutoff
+            ORDER BY s.currentPeriodEnd ASC, s.id ASC
             """)
-    List<Subscription> findExpiredCancelAtPeriodEndSubscriptions(
+    List<Long> findExpiredCancelAtPeriodEndSubscriptionIds(
             @Param("status") SubscriptionStatus status,
-            @Param("cutoff") LocalDateTime cutoff
+            @Param("cutoff") LocalDateTime cutoff,
+            Pageable pageable
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Subscription s
+            SET s.status = app.mockly.domain.product.entity.SubscriptionStatus.CANCELED,
+                s.canceledAt = COALESCE(s.canceledAt, :canceledAt),
+                s.cancelAtPeriodEnd = false,
+                s.scheduledPlan = null,
+                s.currentPaymentScheduleId = null,
+                s.currentMarker = null
+            WHERE s.id = :id
+              AND s.status = app.mockly.domain.product.entity.SubscriptionStatus.ACTIVE
+              AND s.cancelAtPeriodEnd = true
+              AND s.currentPeriodEnd IS NOT NULL
+              AND s.currentPeriodEnd <= :cutoff
+            """)
+    int cancelExpiredPeriodEndAtomically(
+            @Param("id") Long id,
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("canceledAt") LocalDateTime canceledAt
     );
 
     @Query("""

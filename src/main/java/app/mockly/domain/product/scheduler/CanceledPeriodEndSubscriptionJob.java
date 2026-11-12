@@ -1,11 +1,11 @@
 package app.mockly.domain.product.scheduler;
 
-import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.entity.SubscriptionStatus;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.domain.product.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +17,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CanceledPeriodEndSubscriptionJob {
 
+    private static final int BATCH_SIZE = 100;
+
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionService subscriptionService;
 
@@ -26,20 +28,24 @@ public class CanceledPeriodEndSubscriptionJob {
     }
 
     public void processExpiredCancelAtPeriodEndSubscriptions(LocalDateTime now) {
-        List<Subscription> expiredSubscriptions = subscriptionRepository
-                .findExpiredCancelAtPeriodEndSubscriptions(SubscriptionStatus.ACTIVE, now);
+        List<Long> expiredSubscriptionIds = subscriptionRepository
+                .findExpiredCancelAtPeriodEndSubscriptionIds(
+                        SubscriptionStatus.ACTIVE,
+                        now,
+                        PageRequest.of(0, BATCH_SIZE)
+                );
 
-        if (expiredSubscriptions.isEmpty()) {
+        if (expiredSubscriptionIds.isEmpty()) {
             return;
         }
 
-        log.info("해지 예약 만료 구독 정리 시작 - 대상 수: {}", expiredSubscriptions.size());
+        log.info("해지 예약 만료 구독 정리 시작 - 대상 수: {}", expiredSubscriptionIds.size());
 
-        for (Subscription subscription : expiredSubscriptions) {
+        for (Long subscriptionId : expiredSubscriptionIds) {
             try {
-                subscriptionService.completeExpiredCancelAtPeriodEndSubscription(subscription.getId(), now);
+                subscriptionService.completeExpiredCancelAtPeriodEndSubscription(subscriptionId, now);
             } catch (Exception e) {
-                log.error("해지 예약 만료 구독 Free 전환 실패 - subscriptionId: {}", subscription.getId(), e);
+                log.error("해지 예약 만료 구독 Free 전환 실패 - subscriptionId: {}", subscriptionId, e);
             }
         }
     }

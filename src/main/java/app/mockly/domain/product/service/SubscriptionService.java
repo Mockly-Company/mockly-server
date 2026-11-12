@@ -5,7 +5,6 @@ import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.entity.*;
 import app.mockly.domain.payment.repository.InvoiceRepository;
 import app.mockly.domain.payment.repository.OutboxEventRepository;
-import app.mockly.domain.payment.repository.PaymentMethodRepository;
 import app.mockly.domain.payment.repository.PaymentRepository;
 import app.mockly.domain.product.dto.request.CreateSubscriptionPlanChangeRequest;
 import app.mockly.domain.product.dto.request.CreateSubscriptionRequest;
@@ -17,6 +16,12 @@ import app.mockly.domain.product.dto.response.GetSubscriptionResponse;
 import app.mockly.domain.product.entity.*;
 import app.mockly.domain.product.repository.SubscriptionPlanRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.CancelStateResult;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.NextScheduleAttempt;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.PaymentMethodUpdatePlan;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.PlanChangePlan;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.PlanUpgradeCompletionResult;
+import app.mockly.domain.product.service.SubscriptionBillingStateService.ScheduleSyncTarget;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import app.mockly.global.security.SensitiveDataMasker;
@@ -27,21 +32,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class SubscriptionService {
-    private final PaymentMethodRepository paymentMethodRepository;
     private final PortOneService portOneService;
     private final PaymentScheduleService paymentScheduleService;
+    private final SubscriptionBillingStateService billingStateService;
 
     private final SubscriptionRepository subscriptionRepository;
     private final CurrentSubscriptionService currentSubscriptionService;
@@ -70,7 +71,7 @@ public class SubscriptionService {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST, "플랜 가격이 일치하지 않습니다.");
         }
 
-        PaymentMethod paymentMethod = validateAndGetPaymentMethod(userId, paymentMethodId);
+        PaymentMethod paymentMethod = billingStateService.validateAndGetPaymentMethod(userId, paymentMethodId);
         String billingKey = paymentMethod.getBillingKey();
 
         lockUser(userId);
@@ -114,132 +115,113 @@ public class SubscriptionService {
         } catch (Exception e) {
             log.error("구독 생성 실패 - userId: {}, subscriptionId: {}, paymentId: {}", userId, subscription.getId(), payment.getId(), e);
 
-            payment.markAsFailed(e.getMessage());
+            payment.markAsFailed("SUBSCRIPTION_CREATE_PAYMENT_FAILED");
             invoice.markAsFailed();
 
             throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 처리 중 오류가 발생했습니다.");
         }
     }
 
+    @Transactional(readOnly = true)
     public GetSubscriptionResponse getMySubscription(UUID userId) {
         Subscription subscription = currentSubscriptionService.getCurrentSubscription(userId);
         PaymentMethod paymentMethod = resolvePaymentMethodForDisplay(userId, subscription).orElse(null);
         return GetSubscriptionResponse.from(subscription, paymentMethod);
     }
 
-    @Transactional
     public CancelSubscriptionResponse cancelSubscription(UUID userId, Long subscriptionId) {
         return cancelSubscription(userId, subscriptionId, false);
     }
 
-    @Transactional
     public CancelSubscriptionResponse cancelSubscription(UUID userId, Long subscriptionId, boolean immediate) {
-        Subscription subscription = subscriptionRepository.findByIdWithDetails(subscriptionId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다"));
-
-        if (!subscription.getUserId().equals(userId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 구독만 해지할 수 있습니다.");
-        }
-        if (!(subscription.isActive() || subscription.isPastDue() || subscription.isUnpaid())) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "이미 해지되었거나 비활성 상태입니다.");
-        }
-        if (subscription.getSubscriptionPlan().isFree()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "무료 플랜은 해지할 수 없습니다.");
-        }
-
-        revokeScheduleSafely(subscription);
-        cancelPendingScheduleOutboxIfPresent(subscriptionId);
-
-        if (subscription.isActive() && !immediate) {
-            if (!subscription.isCancelAtPeriodEnd()) {
-                subscription.scheduleCancelAtPeriodEnd();
-            }
-            subscriptionRepository.save(subscription);
-            log.info("구독 기간 만료 해지 예약 완료 - userId: {}, subscriptionId: {}, availableUntil: {}",
-                    userId, subscriptionId, subscription.getCurrentPeriodEnd());
-            return CancelSubscriptionResponse.from(subscription);
-        }
-
-        lockUser(userId);
-        subscription.cancel();
-        subscriptionRepository.saveAndFlush(subscription);
-        assignFreePlan(userId);
-
-        log.info("구독 즉시 해지 및 Free 전환 완료 - userId: {}, subscriptionId: {}", userId, subscriptionId);
-        return CancelSubscriptionResponse.from(subscription);
+        CancelStateResult stateResult = billingStateService.cancelSubscriptionState(userId, subscriptionId, immediate);
+        revokeScheduleOutsideTx(subscriptionId, stateResult.oldScheduleId());
+        return stateResult.response();
     }
 
-    @Transactional
     public void completeExpiredCancelAtPeriodEndSubscription(Long subscriptionId, LocalDateTime now) {
-        Subscription subscription = subscriptionRepository.findByIdWithDetails(subscriptionId)
-                .orElse(null);
-        if (subscription == null || !subscription.isActive() || !subscription.isCancelAtPeriodEnd()) {
-            return;
-        }
-        if (subscription.getCurrentPeriodEnd() == null || subscription.getCurrentPeriodEnd().isAfter(now)) {
-            return;
-        }
-
-        UUID userId = subscription.getUserId();
-        lockUser(userId);
-        revokeScheduleSafely(subscription);
-        subscription.cancel();
-        subscriptionRepository.saveAndFlush(subscription);
-        assignFreePlan(userId);
-
-        log.info("해지 예약 만료 구독 Free 전환 완료 - userId: {}, subscriptionId: {}", userId, subscriptionId);
+        billingStateService.transitionExpiredCancelAtPeriodEnd(subscriptionId, now)
+                .ifPresent(result -> revokeScheduleOutsideTx(subscriptionId, result.oldScheduleId()));
     }
 
     @Transactional
     public void assignFreePlan(UUID userId) {
-        lockUser(userId);
-        if (currentSubscriptionService.findCurrentSubscription(userId).isPresent()) {
-            return;
-        }
-        subscriptionPlanRepository.findActiveByPlanTierAndBillingCycle(PlanTier.FREE, BillingCycle.MONTHLY)
-                .ifPresent(freePlan -> {
-                    Subscription subscription = Subscription.create(userId, freePlan);
-                    subscription.activate();
-                    subscriptionRepository.save(subscription);
-                });
+        billingStateService.assignFreePlan(userId);
     }
 
-    private void lockUser(UUID userId) {
-        userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
-    }
-
-    @Transactional
     public void updatePaymentMethod(UUID userId, Long subscriptionId, Long newPaymentMethodId) {
-        Subscription subscription = validateAndGetModifiableSubscription(userId, subscriptionId);
-        PaymentMethod newPaymentMethod = validateAndGetPaymentMethod(userId, newPaymentMethodId);
+        PaymentMethodUpdatePlan plan = billingStateService.preparePaymentMethodUpdate(
+                userId,
+                subscriptionId,
+                newPaymentMethodId
+        );
 
-        if (subscription.isPastDue() || subscription.isUnpaid()) {
-            recoverDelinquentSubscription(subscription, newPaymentMethod);
+        if (plan instanceof PaymentMethodUpdatePlan.Completed) {
             return;
         }
 
-        if (subscription.isCancelAtPeriodEnd()) {
-            subscription.changePaymentMethod(newPaymentMethod);
+        if (plan instanceof PaymentMethodUpdatePlan.ScheduleSyncOnly syncOnly) {
+            syncNextBillingScheduleOutsideTx(
+                    syncOnly.subscriptionId(),
+                    syncOnly.oldScheduleId(),
+                    syncOnly.billingKey()
+            );
             return;
         }
 
-        validatePaymentChangeTimestamp(subscription);
-        paymentScheduleService.replaceSchedule(subscription, newPaymentMethod);
-        subscription.changePaymentMethod(newPaymentMethod);
+        if (plan instanceof PaymentMethodUpdatePlan.DelinquentRecovery recovery) {
+            try {
+                PaymentAmountInput amountInput = new PaymentAmountInput(recovery.amount().longValue(), null, null);
+                portOneService.payWithBillingKey(
+                        recovery.paymentId(),
+                        recovery.billingKey(),
+                        recovery.orderName(),
+                        recovery.currency().toPortOneCurrency(),
+                        amountInput
+                );
+            } catch (Exception e) {
+                log.error("연체 복구 결제 실패 - subscriptionId: {}, paymentId: {}, billingKey: {}",
+                        recovery.subscriptionId(),
+                        recovery.paymentId(),
+                        SensitiveDataMasker.maskBillingKey(recovery.billingKey()),
+                        e);
+                billingStateService.markChargeFailed(
+                        recovery.invoiceId(),
+                        recovery.paymentId(),
+                        "DELINQUENT_RECOVERY_PAYMENT_FAILED"
+                );
+                throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "미납 결제 승인 중 오류가 발생했습니다.");
+            }
+
+            ScheduleSyncTarget syncTarget = billingStateService.completeDelinquentRecovery(userId, recovery);
+            syncNextBillingScheduleOutsideTx(
+                    syncTarget.subscriptionId(),
+                    syncTarget.oldScheduleId(),
+                    syncTarget.billingKey()
+            );
+
+            log.info("연체 구독 복구 완료 - subscriptionId: {}, paymentId: {}, paymentMethodId: {}",
+                    recovery.subscriptionId(), recovery.paymentId(), recovery.newPaymentMethodId());
+        }
     }
 
+    @Transactional(readOnly = true)
     public GetSubscriptionPlanChangeResponse previewPlanChange(UUID userId, Integer targetPlanId) {
         if (targetPlanId == null) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "대상 플랜 ID(targetPlanId)는 필수입니다.");
         }
 
-        Subscription subscription = getValidPaidActiveSubscriptionForPlanChange(userId);
+        Subscription subscription = billingStateService.getValidPaidActiveSubscriptionForPlanChange(userId);
         SubscriptionPlan currentPlan = subscription.getSubscriptionPlan();
-        SubscriptionPlan targetPlan = getValidTargetPaidPlan(targetPlanId, currentPlan);
+        SubscriptionPlan targetPlan = billingStateService.getValidTargetPaidPlan(targetPlanId, currentPlan);
 
         LocalDateTime now = LocalDateTime.now();
-        BigDecimal immediateAmount = calculateProratedImmediateAmount(subscription, currentPlan, targetPlan, now);
+        BigDecimal immediateAmount = billingStateService.calculateProratedImmediateAmount(
+                subscription,
+                currentPlan,
+                targetPlan,
+                now
+        );
         BigDecimal nextBillingAmount = targetPlan.getPrice();
         LocalDateTime nextBillingDate = subscription.getCurrentPeriodEnd();
 
@@ -252,71 +234,54 @@ public class SubscriptionService {
         );
     }
 
-    @Transactional
     public CreateSubscriptionPlanChangeResponse changeSubscriptionPlan(
             UUID userId,
             CreateSubscriptionPlanChangeRequest request
     ) {
-        lockUser(userId);
+        PlanChangePlan plan = billingStateService.preparePlanChange(userId, request);
 
-        Subscription subscription = getValidPaidActiveSubscriptionForPlanChange(userId);
-        SubscriptionPlan currentPlan = subscription.getSubscriptionPlan();
-        SubscriptionPlan targetPlan = getValidTargetPaidPlan(request.targetPlanId(), currentPlan);
-
-        LocalDateTime now = LocalDateTime.now();
-        BigDecimal expectedImmediateAmount = calculateProratedImmediateAmount(subscription, currentPlan, targetPlan, now);
-
-        if (request.confirmedAmount().compareTo(expectedImmediateAmount) != 0) {
-            throw new BusinessException(
-                    ApiStatusCode.BAD_REQUEST,
-                    "확인된 결제 금액이 예상 정산 금액과 일치하지 않습니다."
+        if (plan instanceof PlanChangePlan.DowngradeCompleted downgrade) {
+            syncNextBillingScheduleOutsideTx(
+                    downgrade.subscriptionId(),
+                    downgrade.oldScheduleId(),
+                    downgrade.billingKey()
             );
+            return downgrade.response();
         }
 
-        boolean isUpgrade = targetPlan.getPrice().compareTo(currentPlan.getPrice()) > 0;
-        if (isUpgrade) {
-            PaymentMethod paymentMethod = resolveActivePaymentMethodForCharge(userId, subscription)
-                    .orElseThrow(() -> new BusinessException(
-                            ApiStatusCode.BAD_REQUEST,
-                            "결제에 사용할 활성 결제 수단이 없습니다."
-                    ));
-
-            if (expectedImmediateAmount.compareTo(BigDecimal.ZERO) > 0) {
-                chargeUpgradeDifference(subscription, targetPlan, paymentMethod, expectedImmediateAmount, now);
+        PlanChangePlan.UpgradeChargeRequired upgrade = (PlanChangePlan.UpgradeChargeRequired) plan;
+        if (upgrade.immediateAmount().compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                PaymentAmountInput amountInput = new PaymentAmountInput(upgrade.immediateAmount().longValue(), null, null);
+                portOneService.payWithBillingKey(
+                        upgrade.paymentId(),
+                        upgrade.billingKey(),
+                        upgrade.orderName(),
+                        upgrade.currency().toPortOneCurrency(),
+                        amountInput
+                );
+            } catch (Exception e) {
+                log.error("플랜 업그레이드 차액 결제 실패 - subscriptionId: {}, paymentId: {}, billingKey: {}",
+                        upgrade.subscriptionId(),
+                        upgrade.paymentId(),
+                        SensitiveDataMasker.maskBillingKey(upgrade.billingKey()),
+                        e);
+                billingStateService.markChargeFailed(
+                        upgrade.invoiceId(),
+                        upgrade.paymentId(),
+                        "PLAN_UPGRADE_PAYMENT_FAILED"
+                );
+                throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "플랜 변경 차액 결제 중 오류가 발생했습니다.");
             }
-
-            subscription.upgradePlanImmediately(targetPlan, paymentMethod);
-            paymentScheduleService.replaceSchedule(subscription, paymentMethod);
-
-            log.info("플랜 즉시 업그레이드 완료 - userId: {}, subscriptionId: {}, targetPlan: {}, chargedAmount: {}",
-                    userId, subscription.getId(), targetPlan.getProduct().getName(), expectedImmediateAmount);
-
-            return CreateSubscriptionPlanChangeResponse.of(
-                    subscription,
-                    expectedImmediateAmount,
-                    targetPlan.getCurrency().name(),
-                    now,
-                    now
-            );
         }
 
-        // 다운그레이드: 현재 주기 말에 변경 예약
-        subscription.scheduleDowngrade(targetPlan);
-        resolveActivePaymentMethodForCharge(userId, subscription).ifPresent(paymentMethod -> {
-            subscription.changePaymentMethod(paymentMethod);
-            paymentScheduleService.replaceSchedule(subscription, paymentMethod);
-        });
-
-        log.info("플랜 다운그레이드 예약 완료 - userId: {}, subscriptionId: {}, scheduledPlan: {}, effectiveAt: {}",
-                userId, subscription.getId(), targetPlan.getProduct().getName(), subscription.getCurrentPeriodEnd());
-
-        return CreateSubscriptionPlanChangeResponse.of(
-                subscription,
-                BigDecimal.ZERO,
-                targetPlan.getCurrency().name(),
-                now,
-                subscription.getCurrentPeriodEnd()
+        PlanUpgradeCompletionResult completion = billingStateService.completePlanUpgrade(userId, upgrade);
+        syncNextBillingScheduleOutsideTx(
+                upgrade.subscriptionId(),
+                completion.oldScheduleId(),
+                completion.billingKey()
         );
+        return completion.response();
     }
 
     @Transactional
@@ -384,252 +349,79 @@ public class SubscriptionService {
                 nextPeriodStart);
     }
 
-    private void recoverDelinquentSubscription(Subscription subscription, PaymentMethod newPaymentMethod) {
-        revokeScheduleSafely(subscription);
-
-        SubscriptionPlan planToCharge = subscription.getNextBillingPlan();
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime periodEnd = calculateNextPeriodEnd(now, planToCharge.getBillingCycle());
-
-        Invoice invoice = invoiceRepository
-                .findFirstBySubscriptionIdAndStatusInOrderByCreatedAtDesc(
-                        subscription.getId(),
-                        List.of(InvoiceStatus.FAILED, InvoiceStatus.PENDING)
-                )
-                .map(existingInvoice -> {
-                    existingInvoice.updateForRecovery(planToCharge.getPrice(), now, periodEnd);
-                    return existingInvoice;
-                })
-                .orElseGet(() -> invoiceRepository.save(Invoice.create(
-                        subscription,
-                        planToCharge.getPrice(),
-                        planToCharge.getCurrency(),
-                        now,
-                        periodEnd
-                )));
-
-        Payment payment = Payment.create(invoice, planToCharge.getPrice(), planToCharge.getCurrency());
-        paymentRepository.save(payment);
-
-        try {
-            PaymentAmountInput amountInput = new PaymentAmountInput(planToCharge.getPrice().longValue(), null, null);
-            String orderName = planToCharge.getProduct().getName() + " - 연체 복구 결제";
-            portOneService.payWithBillingKey(
-                    payment.getId(),
-                    newPaymentMethod.getBillingKey(),
-                    orderName,
-                    planToCharge.getCurrency().toPortOneCurrency(),
-                    amountInput
-            );
-        } catch (Exception e) {
-            log.error("연체 복구 결제 실패 - subscriptionId: {}, paymentId: {}, billingKey: {}",
-                    subscription.getId(), payment.getId(),
-                    SensitiveDataMasker.maskBillingKey(newPaymentMethod.getBillingKey()), e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "미납 결제 승인 중 오류가 발생했습니다.");
-        }
-
-        payment.markAsPaid(PaymentMethodType.CARD);
-        invoice.markAsPaid();
-        subscription.recoverFromDelinquency(newPaymentMethod, now);
-
-        LocalDateTime nextPeriodStart = subscription.getCurrentPeriodEnd();
-        LocalDateTime nextPeriodEnd = calculateNextPeriodEnd(
-                nextPeriodStart,
-                subscription.getNextBillingPlan().getBillingCycle()
-        );
-        paymentScheduleService.createSchedule(
-                subscription,
-                newPaymentMethod.getBillingKey(),
-                nextPeriodStart,
-                nextPeriodEnd
-        );
-
-        log.info("연체 구독 복구 완료 - subscriptionId: {}, paymentId: {}, paymentMethodId: {}, 다음 결제일: {}",
-                subscription.getId(), payment.getId(), newPaymentMethod.getId(), nextPeriodStart);
-    }
-
-    private void chargeUpgradeDifference(
-            Subscription subscription,
-            SubscriptionPlan targetPlan,
-            PaymentMethod paymentMethod,
-            BigDecimal immediateAmount,
-            LocalDateTime now
-    ) {
-        Invoice invoice = Invoice.create(
-                subscription,
-                immediateAmount,
-                targetPlan.getCurrency(),
-                now,
-                subscription.getCurrentPeriodEnd()
-        );
-        invoiceRepository.save(invoice);
-
-        Payment payment = Payment.create(invoice, immediateAmount, targetPlan.getCurrency());
-        paymentRepository.save(payment);
-
-        try {
-            PaymentAmountInput amountInput = new PaymentAmountInput(immediateAmount.longValue(), null, null);
-            String orderName = targetPlan.getProduct().getName() + " - 플랜 업그레이드 차액";
-            portOneService.payWithBillingKey(
-                    payment.getId(),
-                    paymentMethod.getBillingKey(),
-                    orderName,
-                    targetPlan.getCurrency().toPortOneCurrency(),
-                    amountInput
-            );
-            payment.markAsPaid(PaymentMethodType.CARD);
-            invoice.markAsPaid();
-        } catch (Exception e) {
-            log.error("플랜 업그레이드 차액 결제 실패 - subscriptionId: {}, paymentId: {}, billingKey: {}",
-                    subscription.getId(), payment.getId(),
-                    SensitiveDataMasker.maskBillingKey(paymentMethod.getBillingKey()), e);
-            throw new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "플랜 변경 차액 결제 중 오류가 발생했습니다.");
-        }
-    }
-
-    private Subscription getValidPaidActiveSubscriptionForPlanChange(UUID userId) {
-        Subscription subscription = currentSubscriptionService.getCurrentSubscription(userId);
-        if (!subscription.isActive()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "활성 상태의 구독만 플랜을 변경할 수 있습니다.");
-        }
-        if (subscription.getSubscriptionPlan().isFree()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "무료 플랜에서는 신규 유료 구독 생성을 이용해주세요.");
-        }
-        return subscription;
-    }
-
-    private SubscriptionPlan getValidTargetPaidPlan(Integer targetPlanId, SubscriptionPlan currentPlan) {
-        SubscriptionPlan targetPlan = subscriptionPlanRepository.findByIdWithProduct(targetPlanId)
-                .filter(plan -> plan.getProduct().isActive())
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "대상 플랜을 찾을 수 없습니다."));
-
-        if (targetPlan.isFree()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "무료 플랜으로는 변경할 수 없습니다. 구독 해지를 이용해주세요.");
-        }
-        if (targetPlan.getId().equals(currentPlan.getId())) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "현재 이용 중인 플랜과 동일한 플랜입니다.");
-        }
-        return targetPlan;
-    }
-
     BigDecimal calculateProratedImmediateAmount(
             Subscription subscription,
             SubscriptionPlan currentPlan,
             SubscriptionPlan targetPlan,
             LocalDateTime now
     ) {
-        BigDecimal priceDiff = targetPlan.getPrice().subtract(currentPlan.getPrice());
-        if (priceDiff.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        return billingStateService.calculateProratedImmediateAmount(subscription, currentPlan, targetPlan, now);
+    }
+
+    private void syncNextBillingScheduleOutsideTx(Long subscriptionId, String oldScheduleId, String billingKey) {
+        revokeScheduleOutsideTx(subscriptionId, oldScheduleId);
+        if (billingKey == null) {
+            return;
         }
 
-        LocalDateTime periodStart = subscription.getCurrentPeriodStart();
-        LocalDateTime periodEnd = subscription.getCurrentPeriodEnd();
-        if (periodStart == null || periodEnd == null || !now.isBefore(periodEnd)) {
-            return BigDecimal.valueOf(priceDiff.longValue());
+        Optional<NextScheduleAttempt> attemptOpt = billingStateService.prepareNextScheduleAttempt(subscriptionId);
+        if (attemptOpt.isEmpty()) {
+            return;
         }
 
-        long totalDays = Math.max(1L, ChronoUnit.DAYS.between(periodStart.toLocalDate(), periodEnd.toLocalDate()));
-        long remainingDays = Math.min(totalDays, ChronoUnit.DAYS.between(now.toLocalDate(), periodEnd.toLocalDate()));
-        if (remainingDays <= 0L) {
-            remainingDays = 1L;
+        NextScheduleAttempt attempt = attemptOpt.get();
+        try {
+            String newScheduleId = portOneService.createPaymentSchedule(
+                    attempt.paymentId(),
+                    billingKey,
+                    attempt.orderName(),
+                    attempt.currency().toPortOneCurrency(),
+                    new PaymentAmountInput(attempt.amount().longValue(), null, null),
+                    attempt.timeToPay()
+            );
+            billingStateService.completeScheduleCreation(subscriptionId, newScheduleId);
+            log.info("결제 스케줄 동기화 완료 - subscriptionId: {}, scheduleId: {}, billingKey: {}, 다음 결제일: {}",
+                    subscriptionId,
+                    newScheduleId,
+                    SensitiveDataMasker.maskBillingKey(billingKey),
+                    attempt.nextPeriodStart());
+        } catch (Exception e) {
+            log.warn("결제 스케줄 즉시 생성 실패 (Outbox 재시도 대기) - subscriptionId: {}, billingKey: {}",
+                    subscriptionId,
+                    SensitiveDataMasker.maskBillingKey(billingKey),
+                    e);
+            billingStateService.abortFailedScheduleAttempt(
+                    attempt.invoiceId(),
+                    attempt.paymentId(),
+                    "PORTONE_SCHEDULE_CREATE_DEFERRED_TO_OUTBOX"
+            );
         }
+    }
 
-        BigDecimal prorated = priceDiff
-                .multiply(BigDecimal.valueOf(remainingDays))
-                .divide(BigDecimal.valueOf(totalDays), 0, RoundingMode.HALF_UP);
-
-        if (prorated.compareTo(BigDecimal.ONE) < 0) {
-            return BigDecimal.ONE;
+    private void revokeScheduleOutsideTx(Long subscriptionId, String oldScheduleId) {
+        if (oldScheduleId == null) {
+            return;
         }
-        return BigDecimal.valueOf(prorated.longValue());
+        try {
+            portOneService.revokePaymentSchedule(oldScheduleId);
+            log.info("결제 스케줄 취소 완료 - subscriptionId: {}, scheduleId: {}",
+                    subscriptionId, oldScheduleId);
+        } catch (Exception e) {
+            log.error("결제 스케줄 취소 실패 - subscriptionId: {}, scheduleId: {}",
+                    subscriptionId, oldScheduleId, e);
+        }
     }
 
     private Optional<PaymentMethod> resolvePaymentMethodForDisplay(UUID userId, Subscription subscription) {
         if (subscription.getSubscriptionPlan().isFree()) {
             return Optional.empty();
         }
-        return resolveActivePaymentMethodForCharge(userId, subscription);
+        return billingStateService.resolveActivePaymentMethodForCharge(userId, subscription);
     }
 
-    private Optional<PaymentMethod> resolveActivePaymentMethodForCharge(UUID userId, Subscription subscription) {
-        PaymentMethod linked = subscription.getPaymentMethod();
-        if (linked != null && linked.isActive()) {
-            return Optional.of(linked);
-        }
-        Optional<PaymentMethod> defaultMethod = paymentMethodRepository
-                .findByUserIdAndIsDefaultTrueAndIsActiveTrue(userId);
-        if (defaultMethod.isPresent()) {
-            return defaultMethod;
-        }
-        return paymentMethodRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId)
-                .stream()
-                .findFirst();
-    }
-
-    private void revokeScheduleSafely(Subscription subscription) {
-        String scheduleId = subscription.getCurrentPaymentScheduleId();
-        if (scheduleId == null) {
-            return;
-        }
-        try {
-            portOneService.revokePaymentSchedule(scheduleId);
-            log.info("결제 스케줄 취소 완료 - subscriptionId: {}, scheduleId: {}",
-                    subscription.getId(), scheduleId);
-        } catch (Exception e) {
-            log.error("결제 스케줄 취소 실패 - subscriptionId: {}, scheduleId: {}",
-                    subscription.getId(), scheduleId, e);
-        } finally {
-            subscription.setCurrentPaymentScheduleId(null);
-        }
-    }
-
-    private void cancelPendingScheduleOutboxIfPresent(Long subscriptionId) {
-        outboxEventRepository
-                .findByAggregateIdAndEventTypeAndStatus(subscriptionId, "SCHEDULE_CREATE", OutboxEventStatus.PENDING)
-                .ifPresent(OutboxEvent::markAsProcessed);
-    }
-
-    private Subscription validateAndGetModifiableSubscription(UUID userId, Long subscriptionId) {
-        Subscription subscription = subscriptionRepository.findByIdWithDetails(subscriptionId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "구독을 찾을 수 없습니다."));
-
-        if (!subscription.getUserId().equals(userId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 구독만 수정할 수 있습니다.");
-        }
-        if (!(subscription.isActive() || subscription.isPastDue() || subscription.isUnpaid())) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "결제 수단을 변경할 수 없는 구독 상태입니다.");
-        }
-        if (subscription.getSubscriptionPlan().isFree()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "무료 플랜은 결제 수단을 변경할 수 없습니다.");
-        }
-        return subscription;
-    }
-
-    private PaymentMethod validateAndGetPaymentMethod(UUID userId, Long paymentMethodId) {
-        PaymentMethod paymentMethod = paymentMethodRepository.findById(paymentMethodId)
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
-
-        if (!paymentMethod.getUser().getId().equals(userId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인의 결제 수단만 사용할 수 있습니다.");
-        }
-        if (!paymentMethod.isActive()) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST, "비활성화된 결제 수단은 사용할 수 없습니다.");
-        }
-        return paymentMethod;
-    }
-
-    private void validatePaymentChangeTimestamp(Subscription subscription) {
-        LocalDateTime nextPaymentTime = subscription.getCurrentPeriodEnd();
-        if (nextPaymentTime == null) {
-            return;
-        }
-        LocalDateTime oneHourBeforePayment = nextPaymentTime.minusHours(1);
-
-        if (LocalDateTime.now().isAfter(oneHourBeforePayment)) {
-            throw new BusinessException(ApiStatusCode.BAD_REQUEST,
-                    "다음 결제 1시간 전에는 결제 수단을 변경할 수 없습니다. 다음 결제일: " + nextPaymentTime);
-        }
+    private void lockUser(UUID userId) {
+        userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
     }
 
     private LocalDateTime calculateNextPeriodEnd(LocalDateTime start, BillingCycle billingCycle) {

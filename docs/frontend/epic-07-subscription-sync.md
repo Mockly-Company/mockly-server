@@ -142,3 +142,7 @@ PortOne v2 단일 결제 경로를 기준으로 구독 해지 예약(유예 후 
   - `DELETE /api/subscriptions/{id}`는 요청 바디 없이 호출해도 `immediate = false`로 안전하게 동작합니다.
   - `GET /api/subscriptions/plan-change`는 `?targetPlanId=`와 기존 `?targetPlan=` 쿼리 파라미터를 모두 허용합니다.
 - **확인 기준**: 최종 요청/응답 스키마 및 오류 코드는 `./gradlew test openapi3`로 생성된 Spring REST Docs 및 `openapi3.yaml`을 기준으로 확인합니다.
+- **서버 운영·보안 참고 (빌링키 암호화 및 키 로테이션)**:
+  - `BILLING_KEY_ENCRYPTION_SECRET` 환경변수는 필수이며 미설정 또는 빈 값일 경우 `BillingKeyCryptoInitializer`에서 기동 즉시 실패(fail-fast)합니다.
+  - 신규/갱신 저장되는 `payment_method.billing_key` 및 `outbox_event.payload` 내 빌링키는 PBKDF2(`PBKDF2WithHmacSHA256`, 65,536회)로 파생한 256-bit AES-GCM(`enc:v1:` 접두사 + 12바이트 랜덤 IV)으로 암호화됩니다.
+  - 무중단 마이그레이션을 위해 복호화 시 `enc:v1:` 접두사가 없는 기존 평문 행은 읽기를 허용하되, 재저장 배치(`PaymentMethod` 엔티티 조회 후 재저장)로 전량 `enc:v1:` 암호문으로 전환하며, 향후 키 교체 시 `enc:v2:` 버전 접두사를 추가해 이전 키 복호화 → 신규 키 재암호화 순서로 로테이션합니다.

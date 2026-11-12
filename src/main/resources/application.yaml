@@ -116,4 +116,4 @@ portone:
   webhook-secret: ${PORTONE_WEBHOOK_SECRET}
 
 payment:
-  billing-key-encryption-secret: ${BILLING_KEY_ENCRYPTION_SECRET:}
+  billing-key-encryption-secret: ${BILLING_KEY_ENCRYPTION_SECRET}
