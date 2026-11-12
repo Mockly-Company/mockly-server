@@ -15,6 +15,13 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
     @Query("""
             SELECT sp FROM SubscriptionPlan sp
                 JOIN FETCH sp.product p
+            WHERE sp.id = :id
+            """)
+    Optional<SubscriptionPlan> findByIdWithProduct(@Param("id") Integer id);
+
+    @Query("""
+            SELECT sp FROM SubscriptionPlan sp
+                JOIN FETCH sp.product p
             WHERE p.planTier = :planTier
               AND p.isActive = true
               AND sp.billingCycle = :billingCycle

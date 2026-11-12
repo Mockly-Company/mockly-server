@@ -8,6 +8,7 @@ import app.mockly.domain.product.entity.Subscription;
 import app.mockly.domain.product.entity.SubscriptionStatus;
 import app.mockly.domain.product.service.SubscriptionService;
 import app.mockly.global.config.PortOneProperties;
+import app.mockly.global.security.SensitiveDataMasker;
 import io.portone.sdk.server.PortOneClient;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.portone.sdk.server.payment.FailedPayment;
@@ -85,20 +86,22 @@ public class WebhookService {
             subscription.activate();
             try {
                 subscriptionService.createFirstPaymentSchedule(subscription, billingKey);
-                log.info("첫 결제 완료 및 구독 활성화 (Webhook 보정): {}, billingKey: {}", subscription.getId(), billingKey);
+                log.info("첫 결제 완료 및 구독 활성화 (Webhook 보정): {}, billingKey: {}",
+                        subscription.getId(), SensitiveDataMasker.maskBillingKey(billingKey));
             } catch (Exception e) {
                 subscription.markAsPastDue();
                 log.error("첫 결제 스케줄 생성 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
-                        subscription.getId(), billingKey, e);
+                        subscription.getId(), SensitiveDataMasker.maskBillingKey(billingKey), e);
             }
         } else if (subscription.isActive() && !subscription.isCanceled()) { // 갱신 결제: 구독 갱신 + 다음 스케줄 생성
             try {
                 subscriptionService.renewSubscription(subscription, billingKey);
-                log.info("구독 갱신 완료 (Webhook): {}, billingKey: {}", subscription.getId(), billingKey);
+                log.info("구독 갱신 완료 (Webhook): {}, billingKey: {}",
+                        subscription.getId(), SensitiveDataMasker.maskBillingKey(billingKey));
             } catch (Exception e) {
                 subscription.markAsPastDue();
                 log.error("구독 갱신 실패, 구독 PAST_DUE 전환 - subscriptionId: {}, billingKey: {}",
-                        subscription.getId(), billingKey, e);
+                        subscription.getId(), SensitiveDataMasker.maskBillingKey(billingKey), e);
             }
         }
     }

@@ -2,20 +2,21 @@ package app.mockly.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.flywaydb.core.Flyway;
-import java.sql.DriverManager;
 import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 
 class FlywaySchemaMigrationTest {
 
     @Test
-    void v1_creates_the_weekly_plan_schema_without_payapp_checkout() throws Exception {
+    void migrations_create_weekly_plan_and_subscription_lifecycle_schema() throws Exception {
         String jdbcUrl = "jdbc:h2:mem:flyway-schema;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
         Flyway.configure()
                 .dataSource(jdbcUrl, "sa", "")
                 .locations("classpath:db/migration")
+                .outOfOrder(true)
                 .load()
                 .migrate();
 
@@ -31,7 +32,11 @@ class FlywaySchemaMigrationTest {
             assertThat(columnExists(metaData, "subscription", "past_due_at")).isTrue();
             assertThat(columnExists(metaData, "subscription", "activated_at")).isTrue();
             assertThat(columnExists(metaData, "subscription", "current_marker")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "cancel_at_period_end")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "scheduled_plan_id")).isTrue();
+            assertThat(columnExists(metaData, "subscription", "payment_method_id")).isTrue();
             assertThat(indexExists(metaData, "subscription", "uk_subscription_current_user")).isTrue();
+            assertThat(indexExists(metaData, "subscription", "idx_subscription_cancel_period_end")).isTrue();
             assertThat(tableExists(metaData, "interview_quota")).isFalse();
             assertThat(tableExists(metaData, "payment_checkout")).isFalse();
             assertThat(columnExists(metaData, "interview_session", "feedback_generation_tier")).isTrue();
@@ -50,13 +55,16 @@ class FlywaySchemaMigrationTest {
             assertThat(columnType(metaData, "feedback_strength", "question_number")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_improvement", "rank")).isEqualTo("INTEGER");
 
-            try (var freeLimit = connection.createStatement().executeQuery("""
-                    SELECT weekly_interview_limit
+            try (var freeProduct = connection.createStatement().executeQuery("""
+                    SELECT weekly_interview_limit, features
                     FROM subscription_product
                     WHERE plan_tier = 'FREE'
                     """)) {
-                freeLimit.next();
-                assertThat(freeLimit.getInt(1)).isEqualTo(1);
+                assertThat(freeProduct.next()).isTrue();
+                assertThat(freeProduct.getInt(1)).isEqualTo(1);
+                assertThat(freeProduct.getString(2))
+                        .contains("기본 면접 히스토리 조회")
+                        .doesNotContain("면접 기록 7일 보관");
             }
             try (var proLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_improvement_practice_limit

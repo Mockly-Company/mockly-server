@@ -66,7 +66,9 @@ public class PaymentMethodService {
         PaymentMethod paymentMethod = paymentMethodRepository.findByIdAndUserIdAndIsActiveTrue(paymentMethodId, userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "결제 수단을 찾을 수 없습니다."));
 
-        boolean hasActiveSubscription = subscriptionRepository.existsByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
+        boolean hasActiveSubscription = subscriptionRepository.findCurrentByUserId(userId)
+                .filter(s -> s.isActive() && !s.isCancelAtPeriodEnd() && !s.getSubscriptionPlan().isFree())
+                .isPresent();
         if (hasActiveSubscription && paymentMethod.isDefault()) {
             throw new BusinessException(ApiStatusCode.BAD_REQUEST,
                     "활성 구독에 사용 중인 기본 결제 수단입니다. 구독을 해지하거나 다른 결제 수단을 기본으로 설정 후 삭제해주세요.");

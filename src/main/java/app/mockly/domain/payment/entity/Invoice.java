@@ -78,4 +78,11 @@ public class Invoice extends BaseEntity {
     public void markAsFailed() {
         this.status = InvoiceStatus.FAILED;
     }
+
+    public void updateForRecovery(BigDecimal amount, LocalDateTime periodStart, LocalDateTime periodEnd) {
+        this.amount = amount;
+        this.periodStart = periodStart;
+        this.periodEnd = periodEnd;
+        this.status = InvoiceStatus.PENDING;
+    }
 }

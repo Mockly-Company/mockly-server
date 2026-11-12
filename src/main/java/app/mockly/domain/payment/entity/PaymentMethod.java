@@ -1,6 +1,7 @@
 package app.mockly.domain.payment.entity;
 
 import app.mockly.domain.auth.entity.User;
+import app.mockly.domain.payment.converter.BillingKeyCryptoConverter;
 import app.mockly.global.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -20,7 +21,8 @@ public class PaymentMethod extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "billing_key", nullable = false)
+    @Convert(converter = BillingKeyCryptoConverter.class)
+    @Column(name = "billing_key", nullable = false, length = 512)
     private String billingKey;
 
     @Column(name = "card_number", length = 20)
