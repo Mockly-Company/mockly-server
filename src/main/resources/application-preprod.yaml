@@ -12,6 +12,8 @@ spring:
 
   flyway:
     enabled: true
+    # 병렬 에픽(V2~V5) 순차 머지 기간 동안 허용, 전체 머지 후 false 전환 가능
+    out-of-order: ${FLYWAY_OUT_OF_ORDER:true}
 
 springdoc:
   api-docs:

@@ -16,6 +16,7 @@ class FlywaySchemaMigrationTest {
         Flyway.configure()
                 .dataSource(jdbcUrl, "sa", "")
                 .locations("classpath:db/migration")
+                .outOfOrder(true)
                 .load()
                 .migrate();
 
@@ -49,6 +50,26 @@ class FlywaySchemaMigrationTest {
             assertThat(columnType(metaData, "interview_feedback", "score_structure")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_strength", "question_number")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_improvement", "rank")).isEqualTo("INTEGER");
+
+            assertThat(tableExists(metaData, "local_interview_meetup")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "host_user_id")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "place_name")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "address_label")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "full_address")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "recruit_deadline")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "current_participants")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup", "max_participants")).isTrue();
+            assertThat(indexExists(metaData, "local_interview_meetup", "idx_meetup_lat_lng")).isTrue();
+            assertThat(indexExists(metaData, "local_interview_meetup", "idx_meetup_starts_at")).isTrue();
+
+            assertThat(tableExists(metaData, "local_interview_meetup_participant")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "meetup_id")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "user_id")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "is_host")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "status")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "message")).isTrue();
+            assertThat(columnExists(metaData, "local_interview_meetup_participant", "applied_at")).isTrue();
+            assertThat(indexExists(metaData, "local_interview_meetup_participant", "idx_meetup_participant_user")).isTrue();
 
             try (var freeLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_interview_limit
