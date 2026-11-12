@@ -7,6 +7,7 @@ import app.mockly.domain.auth.dto.response.LoginResponse;
 import app.mockly.domain.auth.dto.response.RefreshTokenResponse;
 import app.mockly.domain.auth.service.AuthService;
 import app.mockly.global.common.ApiResponse;
+import app.mockly.global.security.BearerTokenExtractor;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,14 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 
+    @PostMapping("/login/apple/code")
+    public ResponseEntity<ApiResponse<LoginResponse>> loginWithAppleCode(
+            @Valid @RequestBody LoginWithAppleCodeRequest request
+    ) {
+        LoginResponse loginResponse = authService.loginWithAppleCode(request);
+        return ResponseEntity.ok(ApiResponse.success(loginResponse));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<UserInfo>> getCurrentUser(@AuthenticationPrincipal UUID userId) {
         UserInfo userInfo = authService.getCurrentUser(userId);
@@ -63,10 +72,7 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestBody LogoutRequest request
     ) {
-        String accessToken = null;
-        if (authorization != null && authorization.startsWith("Bearer ")) {
-            accessToken = authorization.substring(7);
-        }
+        String accessToken = BearerTokenExtractor.extract(authorization);
         authService.logout(accessToken, request.refreshToken());
         return ResponseEntity.ok(ApiResponse.noContent());
     }

@@ -1,5 +1,6 @@
 package app.mockly.domain.payment.scheduler;
 
+import app.mockly.domain.payment.client.PortOneService;
 import app.mockly.domain.payment.entity.OutboxEvent;
 import app.mockly.domain.payment.entity.OutboxEventStatus;
 import app.mockly.domain.payment.repository.OutboxEventRepository;
@@ -20,6 +21,7 @@ public class OutboxEventProcessor {
 
     private final OutboxEventRepository outboxEventRepository;
     private final SubscriptionService subscriptionService;
+    private final PortOneService portOneService;
 
     @Scheduled(fixedDelay = 60000)
     @Transactional
@@ -30,6 +32,9 @@ public class OutboxEventProcessor {
             try {
                 if ("SCHEDULE_CREATE".equals(event.getEventType())) {
                     subscriptionService.processScheduleCreation(event.getAggregateId());
+                } else if ("SCHEDULE_REVOKE".equals(event.getEventType())) {
+                    portOneService.revokePaymentSchedule(event.extractScheduleId());
+                    event.markAsProcessed();
                 }
             } catch (Exception e) {
                 event.recordRetryFailure(e.getMessage());

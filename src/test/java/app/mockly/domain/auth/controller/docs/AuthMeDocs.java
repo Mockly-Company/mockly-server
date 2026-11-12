@@ -17,19 +17,23 @@ public class AuthMeDocs {
             headerWithName("Authorization").description("Bearer {accessToken} - 로그인 시 발급받은 JWT")
     );
 
-    private static final List<FieldDescriptor> RESPONSE_DATA_FIELDS = List.of(
+    public static final List<FieldDescriptor> USER_INFO_FIELDS = List.of(
             fieldWithPath("id").description("사용자 ID").type(SimpleType.STRING),
             fieldWithPath("email").description("이메일").type(SimpleType.STRING),
-            fieldWithPath("name").description("이름").type(SimpleType.STRING)
+            fieldWithPath("name").description("닉네임(이름)").type(SimpleType.STRING),
+            fieldWithPath("hasAgreedToTerms").description("필수 약관 동의 완료 여부").type(SimpleType.BOOLEAN),
+            fieldWithPath("jobCategory").description("희망 직군 (예: DEVELOPER)").type(SimpleType.STRING).optional(),
+            fieldWithPath("jobRole").description("희망 직무 (예: BACKEND)").type(SimpleType.STRING).optional(),
+            fieldWithPath("experienceYears").description("경력 연차 (0~40)").type(SimpleType.NUMBER).optional()
     );
 
     public static ResourceSnippetParameters success() {
         return ResourceSnippetParameters.builder()
                 .privateResource(true)
                 .summary("현재 사용자 조회")
-                .description("JWT 기반 인증으로 현재 로그인한 사용자 정보를 조회합니다.")
+                .description("JWT 기반 인증으로 현재 로그인한 사용자 프로필 및 약관 동의 여부를 조회합니다.")
                 .requestHeaders(REQUEST_HEADERS)
-                .responseFields(ApiResponseDocs.withDataFields(RESPONSE_DATA_FIELDS))
+                .responseFields(ApiResponseDocs.withDataFields(USER_INFO_FIELDS))
                 .build();
     }
 

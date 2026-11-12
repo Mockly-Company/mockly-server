@@ -9,7 +9,9 @@ import lombok.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "session")
+@Table(name = "session", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_session_user_device", columnNames = {"user_id", "device_id"})
+})
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -26,7 +28,7 @@ public class Session extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(unique = true, nullable = false)
+    @Column(name = "device_id", nullable = false)
     private String deviceId;
 
     @Column(nullable = false)
