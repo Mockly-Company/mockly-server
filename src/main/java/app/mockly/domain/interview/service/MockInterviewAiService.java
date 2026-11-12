@@ -1,5 +1,7 @@
 package app.mockly.domain.interview.service;
 
+import app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext;
+import app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.entity.InterviewMessage;
 import app.mockly.domain.interview.entity.InterviewType;
@@ -56,6 +58,21 @@ public class MockInterviewAiService extends InterviewAiService {
                         new InterviewFeedbackResult.Improvement(2, 1, "개선점 2", "요약 2", "상세 2", "인용 2"),
                         new InterviewFeedbackResult.Improvement(3, 1, "개선점 3", "요약 3", "상세 3", "인용 3")),
                 plan == PlanTier.PRO ? "결론을 먼저 말하기" : null
+        );
+    }
+
+    @Override
+    public ImprovementPracticeEvaluationResult evaluateImprovementPractice(
+            ImprovementPracticeEvaluationContext context
+    ) {
+        log.info("[MOCK] evaluateImprovementPractice 실행");
+        return new ImprovementPracticeEvaluationResult(
+                86,
+                "원본 답변 대비 수치와 구체적인 해결 과정이 명확해졌습니다.",
+                "문제 정의부터 원인 분석, 해결 전략, 결과 지표까지 구조적으로 서술되었습니다.",
+                context.submittedAnswer() != null && !context.submittedAnswer().isBlank()
+                        ? context.submittedAnswer()
+                        : "개선된 답변 핵심 문장"
         );
     }
 }

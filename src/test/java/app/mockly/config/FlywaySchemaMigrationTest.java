@@ -16,6 +16,7 @@ class FlywaySchemaMigrationTest {
         Flyway.configure()
                 .dataSource(jdbcUrl, "sa", "")
                 .locations("classpath:db/migration")
+                .outOfOrder(true)
                 .load()
                 .migrate();
 
@@ -49,6 +50,26 @@ class FlywaySchemaMigrationTest {
             assertThat(columnType(metaData, "interview_feedback", "score_structure")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_strength", "question_number")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_improvement", "rank")).isEqualTo("INTEGER");
+
+            assertThat(tableExists(metaData, "improvement_practice")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "user_id")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "session_id")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "improvement_id")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "question_number")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "question_text")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "original_answer")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "submitted_answer")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "status")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "score")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "summary")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "detail")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "quote")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "fail_reason")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "retry_count")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_user_created")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_status_updated")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_session")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_improvement")).isTrue();
 
             try (var freeLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_interview_limit

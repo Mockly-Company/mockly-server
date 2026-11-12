@@ -29,6 +29,8 @@ public class InterviewPromptFactory {
     private final String followUpQuestionUserTemplate;
     private final String feedbackSystemTemplate;
     private final String feedbackUserTemplate;
+    private final String improvementPracticeSystemTemplate;
+    private final String improvementPracticeUserTemplate;
 
     public InterviewPromptFactory(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -38,6 +40,8 @@ public class InterviewPromptFactory {
         this.followUpQuestionUserTemplate = loadTemplate("follow-up-question-user.txt");
         this.feedbackSystemTemplate = loadTemplate("feedback-system.txt");
         this.feedbackUserTemplate = loadTemplate("feedback-user.txt");
+        this.improvementPracticeSystemTemplate = loadTemplate("improvement-practice-system.txt");
+        this.improvementPracticeUserTemplate = loadTemplate("improvement-practice-user.txt");
     }
 
     public InterviewPrompt firstQuestion(InterviewSession session) {
@@ -69,6 +73,19 @@ public class InterviewPromptFactory {
                 interviewType.getDescription(),
                 formatHistory(history));
         return new InterviewPrompt(systemPrompt, userPrompt);
+    }
+
+    public InterviewPrompt improvementPractice(app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext ctx) {
+        String userPrompt = improvementPracticeUserTemplate.formatted(
+                ctx.interviewType().getDescription(),
+                ctx.questionNumber(),
+                ctx.questionText(),
+                ctx.originalAnswer(),
+                ctx.improvementTitle(),
+                ctx.improvementSummary() != null ? ctx.improvementSummary() : "",
+                ctx.submittedAnswer()
+        );
+        return new InterviewPrompt(improvementPracticeSystemTemplate, userPrompt);
     }
 
     private String getLevelContext(ExperienceLevel experienceLevel) {
