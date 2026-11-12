@@ -1,5 +1,6 @@
 package app.mockly.domain.payment.entity;
 
+import app.mockly.domain.payment.converter.BillingKeyCryptoHolder;
 import app.mockly.global.common.BaseEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -50,7 +51,7 @@ public class OutboxEvent extends BaseEntity {
         try {
             Map<String, Object> payloadMap = Map.of(
                     "subscriptionId", subscriptionId,
-                    "billingKey", billingKey
+                    "billingKey", BillingKeyCryptoHolder.encrypt(billingKey)
             );
             String payload = objectMapper.writeValueAsString(payloadMap);
             OutboxEvent event = new OutboxEvent();
@@ -69,7 +70,7 @@ public class OutboxEvent extends BaseEntity {
     public String extractBillingKey() {
         try {
             JsonNode node = objectMapper.readTree(payload);
-            return node.get("billingKey").asText();
+            return BillingKeyCryptoHolder.decrypt(node.get("billingKey").asText());
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Outbox payload 파싱 실패", e);
         }

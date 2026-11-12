@@ -23,6 +23,7 @@ spring:
 
   flyway:
     enabled: true
+    out-of-order: true
 
   sql:
     init:
@@ -113,3 +114,6 @@ portone:
   store-id: ${PORTONE_STORE_ID}
   channel-key: ${PORTONE_CHANNEL_KEY} # 추후 채널들 추가
   webhook-secret: ${PORTONE_WEBHOOK_SECRET}
+
+payment:
+  billing-key-encryption-secret: ${BILLING_KEY_ENCRYPTION_SECRET}
