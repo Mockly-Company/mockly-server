@@ -10,6 +10,7 @@ public class SpatialDistancePolicy {
 
     public static final int DEFAULT_RADIUS_METERS = 3_000;
     public static final int MAX_RADIUS_METERS = 50_000;
+    public static final int MAX_PAGE_SIZE = 50;
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
     private static final double METERS_PER_DEGREE_LAT = 111_320.0;
 
@@ -21,7 +22,9 @@ public class SpatialDistancePolicy {
             boolean radiusMode,
             Double originLat,
             Double originLng,
-            Integer radiusMeters
+            Integer radiusMeters,
+            Double cosOriginLat,
+            Double maxHaversineH
     ) {
     }
 
@@ -29,8 +32,8 @@ public class SpatialDistancePolicy {
         if (criteria.page() < 1) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
         }
-        if (criteria.size() < 1 || criteria.size() > 100) {
-            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "size는 1 이상 100 이하여야 합니다.");
+        if (criteria.size() < 1 || criteria.size() > MAX_PAGE_SIZE) {
+            throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "size는 1 이상 " + MAX_PAGE_SIZE + " 이하여야 합니다.");
         }
 
         boolean hasAnyRadius = criteria.latitude() != null
@@ -64,9 +67,14 @@ public class SpatialDistancePolicy {
                 throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "radiusMeters는 1~50000 범위여야 합니다.");
             }
 
+            double originLatRad = Math.toRadians(criteria.latitude());
+            double actualCosOriginLat = Math.cos(originLatRad);
+            double safeCosLat = Math.max(0.01, actualCosOriginLat);
             double latDelta = radius / METERS_PER_DEGREE_LAT;
-            double cosLat = Math.max(0.01, Math.cos(Math.toRadians(criteria.latitude())));
-            double lngDelta = radius / (METERS_PER_DEGREE_LAT * cosLat);
+            double lngDelta = radius / (METERS_PER_DEGREE_LAT * safeCosLat);
+            // calculateDistanceMeters rounds half-up (Math.round), so distance <= radius iff exactMeters < radius + 0.5
+            double maxHalfAngleSin = Math.sin((radius + 0.5) / (2.0 * EARTH_RADIUS_METERS));
+            double maxHaversineH = maxHalfAngleSin * maxHalfAngleSin;
 
             return new BoundingBox(
                     Math.max(-90.0, criteria.latitude() - latDelta),
@@ -76,7 +84,9 @@ public class SpatialDistancePolicy {
                     true,
                     criteria.latitude(),
                     criteria.longitude(),
-                    radius
+                    radius,
+                    actualCosOriginLat,
+                    maxHaversineH
             );
         }
 
@@ -95,6 +105,8 @@ public class SpatialDistancePolicy {
                 criteria.swLng(),
                 criteria.neLng(),
                 false,
+                null,
+                null,
                 null,
                 null,
                 null

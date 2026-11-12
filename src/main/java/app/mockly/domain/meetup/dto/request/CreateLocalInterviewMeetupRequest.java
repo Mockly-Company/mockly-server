@@ -65,6 +65,59 @@ public record CreateLocalInterviewMeetupRequest(
         @NotNull(message = "최대 인원은 필수입니다.")
         @Min(value = 2, message = "최대 인원은 최소 2명이어야 합니다.")
         @Max(value = 8, message = "최대 인원은 최대 8명이어야 합니다.")
-        Integer maxParticipants
+        Integer maxParticipants,
+
+        MeetupJobCategory hostJobCategory,
+
+        MeetupJobRole hostJobRole,
+
+        @Min(value = 0, message = "방장 경력 연차는 0 이상이어야 합니다.")
+        @Max(value = 50, message = "방장 경력 연차는 50 이하여야 합니다.")
+        Integer hostExperienceYears,
+
+        MeetupExperienceLevel hostExperienceLevel
 ) {
+    public CreateLocalInterviewMeetupRequest(
+            String title,
+            String description,
+            MeetupJobCategory jobCategory,
+            MeetupJobRole jobRole,
+            MeetupInterviewType interviewType,
+            MeetupExperienceLevel experienceLevel,
+            MeetupLocationStatus locationStatus,
+            MeetupMeetingType meetingType,
+            String placeName,
+            String addressLabel,
+            String fullAddress,
+            Double latitude,
+            Double longitude,
+            Instant startsAt,
+            Instant endsAt,
+            Instant recruitDeadline,
+            Integer maxParticipants
+    ) {
+        this(
+                title,
+                description,
+                jobCategory,
+                jobRole,
+                interviewType,
+                experienceLevel,
+                locationStatus,
+                meetingType,
+                placeName,
+                addressLabel,
+                fullAddress,
+                latitude,
+                longitude,
+                startsAt,
+                endsAt,
+                recruitDeadline,
+                maxParticipants,
+                null,
+                null,
+                null,
+                null
+        );
+    }
 }

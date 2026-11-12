@@ -36,7 +36,7 @@ public class LocalInterviewMeetupDocs {
             parameterWithName("experienceLevel").description("경력 수준 필터 (ENTRY | JUNIOR | MID | SENIOR)").type(SimpleType.STRING).optional(),
             parameterWithName("sort").description("정렬 기준 (DISTANCE | STARTS_AT)").type(SimpleType.STRING).optional(),
             parameterWithName("page").description("페이지 번호 (1부터 시작, 기본값 1)").type(SimpleType.NUMBER).optional(),
-            parameterWithName("size").description("페이지 크기 (기본값 20)").type(SimpleType.NUMBER).optional()
+            parameterWithName("size").description("페이지 크기 (기본값 20, 최대 50)").type(SimpleType.NUMBER).optional()
     );
 
     private static final List<FieldDescriptor> SEARCH_RESPONSE_FIELDS = List.of(
@@ -111,7 +111,11 @@ public class LocalInterviewMeetupDocs {
             fieldWithPath("startsAt").description("모임 시작 시각 (ISO-8601)").type(SimpleType.STRING),
             fieldWithPath("endsAt").description("모임 종료 시각 (ISO-8601, startsAt 이후)").type(SimpleType.STRING),
             fieldWithPath("recruitDeadline").description("모집 마감 시각 (ISO-8601, startsAt 이전 또는 동일)").type(SimpleType.STRING),
-            fieldWithPath("maxParticipants").description("최대 정원 (2~8)").type(SimpleType.NUMBER)
+            fieldWithPath("maxParticipants").description("최대 정원 (2~8)").type(SimpleType.NUMBER),
+            fieldWithPath("hostJobCategory").description("방장 본인의 직군 스냅샷 (선택)").type(SimpleType.STRING).optional(),
+            fieldWithPath("hostJobRole").description("방장 본인의 직무 스냅샷 (선택)").type(SimpleType.STRING).optional(),
+            fieldWithPath("hostExperienceYears").description("방장 본인의 경력 연차 스냅샷 (선택, 0~50)").type(SimpleType.NUMBER).optional(),
+            fieldWithPath("hostExperienceLevel").description("방장 본인의 경력 수준 스냅샷 (선택)").type(SimpleType.STRING).optional()
     );
 
     private static final List<FieldDescriptor> CREATE_RESPONSE_FIELDS = List.of(
@@ -141,7 +145,11 @@ public class LocalInterviewMeetupDocs {
     );
 
     private static final List<FieldDescriptor> JOIN_REQUEST_FIELDS = List.of(
-            fieldWithPath("message").description("방장에게 남기는 한마디 (선택, 최대 300자)").type(SimpleType.STRING).optional()
+            fieldWithPath("message").description("방장에게 남기는 한마디 (선택, 최대 300자)").type(SimpleType.STRING).optional(),
+            fieldWithPath("jobCategory").description("신청자 본인의 직군 스냅샷 (선택)").type(SimpleType.STRING).optional(),
+            fieldWithPath("jobRole").description("신청자 본인의 직무 스냅샷 (선택)").type(SimpleType.STRING).optional(),
+            fieldWithPath("experienceYears").description("신청자 본인의 경력 연차 스냅샷 (선택, 0~50)").type(SimpleType.NUMBER).optional(),
+            fieldWithPath("experienceLevel").description("신청자 본인의 경력 수준 스냅샷 (선택)").type(SimpleType.STRING).optional()
     );
 
     private static final List<FieldDescriptor> APPLICANTS_RESPONSE_FIELDS = List.of(

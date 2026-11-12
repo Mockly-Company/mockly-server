@@ -66,6 +66,30 @@ class LocalInterviewMeetupControllerTest {
     @Autowired
     private LocalInterviewMeetupParticipantRepository participantRepository;
 
+    private static final LocalInterviewMeetupParticipant.ProfileSnapshot HOST_PROFILE =
+            new LocalInterviewMeetupParticipant.ProfileSnapshot(
+                    MeetupJobCategory.DEVELOPER,
+                    MeetupJobRole.BACKEND,
+                    5,
+                    MeetupExperienceLevel.MID
+            );
+
+    private static final LocalInterviewMeetupParticipant.ProfileSnapshot APPLICANT_PROFILE =
+            new LocalInterviewMeetupParticipant.ProfileSnapshot(
+                    MeetupJobCategory.DEVELOPER,
+                    MeetupJobRole.FRONTEND,
+                    2,
+                    MeetupExperienceLevel.JUNIOR
+            );
+
+    private static final LocalInterviewMeetupParticipant.ProfileSnapshot THIRD_PROFILE =
+            new LocalInterviewMeetupParticipant.ProfileSnapshot(
+                    MeetupJobCategory.DEVELOPER,
+                    MeetupJobRole.AI_ML,
+                    0,
+                    MeetupExperienceLevel.ENTRY
+            );
+
     private User hostUser;
     private String hostToken;
     private User applicantUser;
@@ -156,6 +180,82 @@ class LocalInterviewMeetupControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/local-interview-meetups - 성공: DB 레벨 Haversine 반경 필터링(바운딩박스 모서리 제외) 및 페이지네이션 정확성, size 상한 검증")
+    void searchMeetups_dbPaginationAndRadiusExclusion() throws Exception {
+        Instant now = Instant.now();
+        // 1. 중심점 (0m)
+        saveMeetupWithHost(
+                "연남동 0m 모임",
+                37.5626, 126.9247,
+                now.plus(2, ChronoUnit.DAYS),
+                now.plus(1, ChronoUnit.DAYS),
+                4
+        );
+        // 2. 반경 내 (~1,353m)
+        saveMeetupWithHost(
+                "신촌역 1.3km 모임",
+                37.5552, 126.9369,
+                now.plus(3, ChronoUnit.DAYS),
+                now.plus(2, ChronoUnit.DAYS),
+                4
+        );
+        // 3. 바운딩박스 내부 모서리지만 원형 반경(3000m) 바깥인 지점 (~3,650m -> DB Haversine 조건에서 제외되어야 함)
+        saveMeetupWithHost(
+                "바운딩박스 모서리 반경 밖 모임",
+                37.5868, 126.9525,
+                now.plus(4, ChronoUnit.DAYS),
+                now.plus(2, ChronoUnit.DAYS),
+                4
+        );
+
+        // page 1 (size=1) -> totalElements=2, totalPages=2, hasNext=true
+        mockMvc.perform(get("/api/local-interview-meetups")
+                        .header("Authorization", "Bearer " + applicantToken)
+                        .param("latitude", "37.5626")
+                        .param("longitude", "126.9247")
+                        .param("radiusMeters", "3000")
+                        .param("sort", "DISTANCE")
+                        .param("page", "1")
+                        .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.meetups.length()").value(1))
+                .andExpect(jsonPath("$.data.meetups[0].title").value("연남동 0m 모임"))
+                .andExpect(jsonPath("$.data.pagination.page").value(1))
+                .andExpect(jsonPath("$.data.pagination.size").value(1))
+                .andExpect(jsonPath("$.data.pagination.totalElements").value(2))
+                .andExpect(jsonPath("$.data.pagination.totalPages").value(2))
+                .andExpect(jsonPath("$.data.pagination.hasNext").value(true));
+
+        // page 2 (size=1) -> 두 번째 모임 반환, hasNext=false
+        mockMvc.perform(get("/api/local-interview-meetups")
+                        .header("Authorization", "Bearer " + applicantToken)
+                        .param("latitude", "37.5626")
+                        .param("longitude", "126.9247")
+                        .param("radiusMeters", "3000")
+                        .param("sort", "DISTANCE")
+                        .param("page", "2")
+                        .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.meetups.length()").value(1))
+                .andExpect(jsonPath("$.data.meetups[0].title").value("신촌역 1.3km 모임"))
+                .andExpect(jsonPath("$.data.pagination.page").value(2))
+                .andExpect(jsonPath("$.data.pagination.totalElements").value(2))
+                .andExpect(jsonPath("$.data.pagination.totalPages").value(2))
+                .andExpect(jsonPath("$.data.pagination.hasNext").value(false));
+
+        // size > 50 요청 시 400 VALIDATION_ERROR
+        mockMvc.perform(get("/api/local-interview-meetups")
+                        .header("Authorization", "Bearer " + applicantToken)
+                        .param("latitude", "37.5626")
+                        .param("longitude", "126.9247")
+                        .param("radiusMeters", "3000")
+                        .param("page", "1")
+                        .param("size", "51"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     @DisplayName("GET /api/local-interview-meetups - 성공: 지도 영역(bounds) 검색 시 distanceMeters는 null")
     void searchMeetups_bounds_success() throws Exception {
         Instant now = Instant.now();
@@ -226,7 +326,8 @@ class LocalInterviewMeetupControllerTest {
 
         // 2. 신청 후 PENDING 상태 -> 여전히 fullAddress == null
         LocalInterviewMeetupParticipant pendingApplicant = participantRepository.saveAndFlush(
-                LocalInterviewMeetupParticipant.createApplicant(meetup, applicantUser, "열심히 참여하겠습니다!", now)
+                LocalInterviewMeetupParticipant.createApplicant(
+                        meetup, applicantUser, "열심히 참여하겠습니다!", APPLICANT_PROFILE, now)
         );
         mockMvc.perform(get("/api/local-interview-meetups/{meetupId}", meetup.getId())
                         .header("Authorization", "Bearer " + applicantToken))
@@ -289,7 +390,11 @@ class LocalInterviewMeetupControllerTest {
                 startsAt,
                 startsAt.plus(90, ChronoUnit.MINUTES),
                 startsAt.minus(6, ChronoUnit.HOURS),
-                4
+                4,
+                MeetupJobCategory.DEVELOPER,
+                MeetupJobRole.BACKEND,
+                6,
+                MeetupExperienceLevel.SENIOR
         );
 
         String responseBody = mockMvc.perform(post("/api/local-interview-meetups")
@@ -315,6 +420,105 @@ class LocalInterviewMeetupControllerTest {
                 .orElseThrow();
         assertThat(hostParticipant.isHost()).isTrue();
         assertThat(hostParticipant.getStatus()).isEqualTo(MeetupParticipationStatus.APPROVED);
+        assertThat(hostParticipant.getExperienceYears()).isEqualTo(6);
+        assertThat(hostParticipant.getExperienceLevel()).isEqualTo(MeetupExperienceLevel.SENIOR);
+    }
+
+    @Test
+    @DisplayName("참여자 스냅샷 격리: 모임 모집 대상(JUNIOR)과 무관하게 방장·신청자 각자의 직무·연차·레벨 스냅샷이 보존됨")
+    void participantProfileSnapshot_preservedIndependentlyFromMeetupTarget() throws Exception {
+        Instant startsAt = Instant.now().plus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        // 방장: 모임 대상은 BACKEND + JUNIOR이지만, 방장 본인은 BACKEND 7년차(SENIOR 자동 파생)
+        CreateLocalInterviewMeetupRequest createRequest = new CreateLocalInterviewMeetupRequest(
+                "직무 혼합 기술면접 스터디",
+                "서로 다른 연차와 직무 관점에서 피드백을 주고받습니다.",
+                MeetupJobCategory.DEVELOPER,
+                MeetupJobRole.BACKEND,
+                MeetupInterviewType.TECHNICAL,
+                MeetupExperienceLevel.JUNIOR,
+                MeetupLocationStatus.PLACE_CONFIRMED,
+                MeetupMeetingType.OFFLINE,
+                "강남 스터디룸",
+                "역삼동",
+                "서울 강남구 테헤란로 101",
+                37.4980,
+                127.0276,
+                startsAt,
+                startsAt.plus(90, ChronoUnit.MINUTES),
+                startsAt.minus(6, ChronoUnit.HOURS),
+                4,
+                MeetupJobCategory.DEVELOPER,
+                MeetupJobRole.BACKEND,
+                7,
+                null
+        );
+
+        String createBody = mockMvc.perform(post("/api/local-interview-meetups")
+                        .header("Authorization", "Bearer " + hostToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String meetupId = objectMapper.readTree(createBody).path("data").path("meetupId").asText();
+
+        // 신청자 1: FRONTEND 4년차(MID 자동 파생)로 신청
+        CreateMeetupParticipantRequest applicantRequest = new CreateMeetupParticipantRequest(
+                "프론트엔드 4년차 지원합니다.",
+                MeetupJobCategory.DEVELOPER,
+                MeetupJobRole.FRONTEND,
+                4,
+                null
+        );
+        mockMvc.perform(post("/api/local-interview-meetups/{meetupId}/participants", meetupId)
+                        .header("Authorization", "Bearer " + applicantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(applicantRequest)))
+                .andExpect(status().isOk());
+
+        // 신청자 2: 프로필 필드 생략(하위 호환 요청) -> 모임의 JUNIOR(1년)를 복사하지 않고 0년차/ENTRY로 기본 기록
+        mockMvc.perform(post("/api/local-interview-meetups/{meetupId}/participants", meetupId)
+                        .header("Authorization", "Bearer " + thirdToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateMeetupParticipantRequest("신입 지원합니다."))))
+                .andExpect(status().isOk());
+
+        // 신청자 1 승인
+        mockMvc.perform(patch("/api/local-interview-meetups/{meetupId}/participants/{userId}",
+                        meetupId, applicantUser.getId())
+                        .header("Authorization", "Bearer " + hostToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new UpdateMeetupParticipantStatusRequest(MeetupParticipationStatus.APPROVED))))
+                .andExpect(status().isOk());
+
+        // 방장용 전체 참여자 목록 검증: 방장(7년/SENIOR), 신청자1(FRONTEND/4년/MID), 신청자2(0년/ENTRY)
+        mockMvc.perform(get("/api/local-interview-meetups/{meetupId}/participants", meetupId)
+                        .header("Authorization", "Bearer " + hostToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.participants.length()").value(3))
+                .andExpect(jsonPath("$.data.participants[0].isHost").value(true))
+                .andExpect(jsonPath("$.data.participants[0].jobRole").value("BACKEND"))
+                .andExpect(jsonPath("$.data.participants[0].experienceYears").value(7))
+                .andExpect(jsonPath("$.data.participants[0].experienceLevel").value("SENIOR"))
+                .andExpect(jsonPath("$.data.participants[1].jobRole").value("FRONTEND"))
+                .andExpect(jsonPath("$.data.participants[1].experienceYears").value(4))
+                .andExpect(jsonPath("$.data.participants[1].experienceLevel").value("MID"))
+                .andExpect(jsonPath("$.data.participants[2].experienceYears").value(0))
+                .andExpect(jsonPath("$.data.participants[2].experienceLevel").value("ENTRY"));
+
+        // 모임 상세의 participantSummaries(승인 참여자) 검증
+        mockMvc.perform(get("/api/local-interview-meetups/{meetupId}", meetupId)
+                        .header("Authorization", "Bearer " + applicantToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.experienceLevel").value("JUNIOR"))
+                .andExpect(jsonPath("$.data.participantSummaries.length()").value(2))
+                .andExpect(jsonPath("$.data.participantSummaries[0].experienceYears").value(7))
+                .andExpect(jsonPath("$.data.participantSummaries[0].experienceLevel").value("SENIOR"))
+                .andExpect(jsonPath("$.data.participantSummaries[1].jobRole").value("FRONTEND"))
+                .andExpect(jsonPath("$.data.participantSummaries[1].experienceYears").value(4))
+                .andExpect(jsonPath("$.data.participantSummaries[1].experienceLevel").value("MID"));
     }
 
     @Test
@@ -364,7 +568,8 @@ class LocalInterviewMeetupControllerTest {
                 4
         );
         participantRepository.saveAndFlush(
-                LocalInterviewMeetupParticipant.createApplicant(hostedMeetup, applicantUser, "신청합니다", now)
+                LocalInterviewMeetupParticipant.createApplicant(
+                        hostedMeetup, applicantUser, "신청합니다", APPLICANT_PROFILE, now)
         );
 
         mockMvc.perform(get("/api/local-interview-meetups/me")
@@ -394,10 +599,17 @@ class LocalInterviewMeetupControllerTest {
         );
 
         // 1. 정상 신청 (200)
+        CreateMeetupParticipantRequest joinRequest = new CreateMeetupParticipantRequest(
+                "함께 연습해요!",
+                MeetupJobCategory.DEVELOPER,
+                MeetupJobRole.FRONTEND,
+                2,
+                MeetupExperienceLevel.JUNIOR
+        );
         mockMvc.perform(post("/api/local-interview-meetups/{meetupId}/participants", meetup.getId())
                         .header("Authorization", "Bearer " + applicantToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateMeetupParticipantRequest("함께 연습해요!"))))
+                        .content(objectMapper.writeValueAsString(joinRequest)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andDo(document("meetup-join",
@@ -451,7 +663,7 @@ class LocalInterviewMeetupControllerTest {
                 4
         );
         LocalInterviewMeetupParticipant approvedApplicant = LocalInterviewMeetupParticipant
-                .createApplicant(meetup, applicantUser, "참여", now);
+                .createApplicant(meetup, applicantUser, "참여", APPLICANT_PROFILE, now);
         approvedApplicant.approve(now);
         meetup.incrementParticipants();
         participantRepository.saveAndFlush(approvedApplicant);
@@ -491,7 +703,8 @@ class LocalInterviewMeetupControllerTest {
                 4
         );
         participantRepository.saveAndFlush(
-                LocalInterviewMeetupParticipant.createApplicant(meetup, applicantUser, "꼭 참여하고 싶습니다.", now)
+                LocalInterviewMeetupParticipant.createApplicant(
+                        meetup, applicantUser, "꼭 참여하고 싶습니다.", APPLICANT_PROFILE, now)
         );
 
         mockMvc.perform(get("/api/local-interview-meetups/{meetupId}/participants", meetup.getId())
@@ -526,10 +739,12 @@ class LocalInterviewMeetupControllerTest {
                 2
         );
         participantRepository.saveAndFlush(
-                LocalInterviewMeetupParticipant.createApplicant(meetup, applicantUser, "첫 신청자", now)
+                LocalInterviewMeetupParticipant.createApplicant(
+                        meetup, applicantUser, "첫 신청자", APPLICANT_PROFILE, now)
         );
         participantRepository.saveAndFlush(
-                LocalInterviewMeetupParticipant.createApplicant(meetup, thirdUser, "두 번째 신청자", now)
+                LocalInterviewMeetupParticipant.createApplicant(
+                        meetup, thirdUser, "두 번째 신청자", THIRD_PROFILE, now)
         );
 
         // 1. 비방장 승인 시도 -> 403 FORBIDDEN
@@ -613,7 +828,9 @@ class LocalInterviewMeetupControllerTest {
                 .currentParticipants(1)
                 .maxParticipants(maxParticipants)
                 .build());
-        participantRepository.saveAndFlush(LocalInterviewMeetupParticipant.createHost(meetup, hostUser, Instant.now()));
+        participantRepository.saveAndFlush(
+                LocalInterviewMeetupParticipant.createHost(meetup, hostUser, HOST_PROFILE, Instant.now())
+        );
         return meetup;
     }
 }

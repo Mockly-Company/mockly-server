@@ -61,4 +61,17 @@ class SpatialDistancePolicyTest {
         int meters = policy.calculateDistanceMeters(37.5626, 126.9247, 37.5552, 126.9369);
         assertThat(meters).isBetween(1250, 1450);
     }
+
+    @Test
+    @DisplayName("size가 최대 상한(50)을 초과하면 400 VALIDATION_ERROR 예외가 발생한다")
+    void resolveAndValidate_sizeExceedsMaxPageSize_throwsValidationError() {
+        MeetupSearchCriteria criteria = new MeetupSearchCriteria(
+                37.5626, 126.9247, 3000,
+                null, null, null, null,
+                null, null, null, null, MeetupSortType.DISTANCE, 1, 51
+        );
+
+        assertThatThrownBy(() -> policy.resolveAndValidate(criteria))
+                .isInstanceOf(BusinessException.class);
+    }
 }

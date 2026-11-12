@@ -14,4 +14,17 @@ public enum MeetupExperienceLevel {
             case SENIOR -> 6;
         };
     }
+
+    public static MeetupExperienceLevel fromExperienceYears(int years) {
+        if (years <= 0) {
+            return ENTRY;
+        }
+        if (years <= 2) {
+            return JUNIOR;
+        }
+        if (years <= 5) {
+            return MID;
+        }
+        return SENIOR;
+    }
 }

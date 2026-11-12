@@ -13,6 +13,9 @@ import app.mockly.domain.meetup.repository.LocalInterviewMeetupRepository;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,26 +36,53 @@ public class LocalInterviewMeetupService {
     public GetLocalInterviewMeetupsResponse searchMeetups(MeetupSearchCriteria criteria) {
         SpatialDistancePolicy.BoundingBox box = spatialDistancePolicy.resolveAndValidate(criteria);
         Instant now = Instant.now();
-
-        List<LocalInterviewMeetup> candidates = meetupRepository.findInBoundingBox(
-                now,
-                box.minLat(),
-                box.maxLat(),
-                box.minLng(),
-                box.maxLng(),
-                criteria.jobCategory(),
-                criteria.jobRole(),
-                criteria.interviewType(),
-                criteria.experienceLevel()
-        );
+        int page = criteria.page();
+        int size = criteria.size();
+        Pageable pageable = PageRequest.of(page - 1, size);
 
         MeetupSortType effectiveSort = criteria.sort() != null
                 ? criteria.sort()
                 : (box.radiusMode() ? MeetupSortType.DISTANCE : MeetupSortType.STARTS_AT);
 
-        List<GetLocalInterviewMeetupsResponse.MeetupListItem> filtered;
+        Page<LocalInterviewMeetup> meetupPage;
+        List<GetLocalInterviewMeetupsResponse.MeetupListItem> pageItems;
+
         if (box.radiusMode()) {
-            filtered = candidates.stream()
+            meetupPage = effectiveSort == MeetupSortType.DISTANCE
+                    ? meetupRepository.searchInRadiusOrderByDistance(
+                            now,
+                            box.minLat(),
+                            box.maxLat(),
+                            box.minLng(),
+                            box.maxLng(),
+                            box.originLat(),
+                            box.originLng(),
+                            box.cosOriginLat(),
+                            box.maxHaversineH(),
+                            criteria.jobCategory(),
+                            criteria.jobRole(),
+                            criteria.interviewType(),
+                            criteria.experienceLevel(),
+                            pageable
+                    )
+                    : meetupRepository.searchInRadiusOrderByStartsAt(
+                            now,
+                            box.minLat(),
+                            box.maxLat(),
+                            box.minLng(),
+                            box.maxLng(),
+                            box.originLat(),
+                            box.originLng(),
+                            box.cosOriginLat(),
+                            box.maxHaversineH(),
+                            criteria.jobCategory(),
+                            criteria.jobRole(),
+                            criteria.interviewType(),
+                            criteria.experienceLevel(),
+                            pageable
+                    );
+
+            pageItems = meetupPage.getContent().stream()
                     .map(meetup -> {
                         int distance = spatialDistancePolicy.calculateDistanceMeters(
                                 box.originLat(),
@@ -62,36 +92,34 @@ public class LocalInterviewMeetupService {
                         );
                         return GetLocalInterviewMeetupsResponse.MeetupListItem.from(meetup, distance);
                     })
-                    .filter(item -> item.distanceMeters() <= box.radiusMeters())
-                    .sorted(effectiveSort == MeetupSortType.DISTANCE
-                            ? Comparator.comparingInt(GetLocalInterviewMeetupsResponse.MeetupListItem::distanceMeters)
-                                    .thenComparing(GetLocalInterviewMeetupsResponse.MeetupListItem::startsAt)
-                            : Comparator.comparing(GetLocalInterviewMeetupsResponse.MeetupListItem::startsAt)
-                                    .thenComparingInt(GetLocalInterviewMeetupsResponse.MeetupListItem::distanceMeters))
                     .toList();
         } else {
-            filtered = candidates.stream()
+            meetupPage = meetupRepository.searchInBounds(
+                    now,
+                    box.minLat(),
+                    box.maxLat(),
+                    box.minLng(),
+                    box.maxLng(),
+                    criteria.jobCategory(),
+                    criteria.jobRole(),
+                    criteria.interviewType(),
+                    criteria.experienceLevel(),
+                    pageable
+            );
+
+            pageItems = meetupPage.getContent().stream()
                     .map(meetup -> GetLocalInterviewMeetupsResponse.MeetupListItem.from(meetup, null))
-                    .sorted(Comparator.comparing(GetLocalInterviewMeetupsResponse.MeetupListItem::startsAt))
                     .toList();
         }
 
-        int totalElements = filtered.size();
-        int size = criteria.size();
-        int page = criteria.page();
-        int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / size);
-        int fromIndex = Math.min((page - 1) * size, totalElements);
-        int toIndex = Math.min(fromIndex + size, totalElements);
-
-        List<GetLocalInterviewMeetupsResponse.MeetupListItem> pageItems = filtered.subList(fromIndex, toIndex);
         return new GetLocalInterviewMeetupsResponse(
                 pageItems,
                 new GetLocalInterviewMeetupsResponse.Pagination(
                         page,
                         size,
-                        totalElements,
-                        totalPages,
-                        page < totalPages
+                        meetupPage.getTotalElements(),
+                        meetupPage.getTotalPages(),
+                        meetupPage.hasNext()
                 )
         );
     }
@@ -194,8 +222,11 @@ public class LocalInterviewMeetupService {
                 .maxParticipants(request.maxParticipants())
                 .build();
 
-        LocalInterviewMeetup savedMeetup = meetupRepository.saveAndFlush(meetup);
-        participantRepository.save(LocalInterviewMeetupParticipant.createHost(savedMeetup, hostUser, Instant.now()));
+        LocalInterviewMeetup savedMeetup = meetupRepository.save(meetup);
+        LocalInterviewMeetupParticipant.ProfileSnapshot hostProfile = resolveHostProfileSnapshot(request);
+        participantRepository.save(
+                LocalInterviewMeetupParticipant.createHost(savedMeetup, hostUser, hostProfile, Instant.now())
+        );
 
         return new CreateLocalInterviewMeetupResponse(savedMeetup.getId().toString());
     }
@@ -256,6 +287,8 @@ public class LocalInterviewMeetupService {
         String normalizedMessage = request != null && request.message() != null && !request.message().isBlank()
                 ? request.message().trim()
                 : null;
+        LocalInterviewMeetupParticipant.ProfileSnapshot applicantProfile =
+                resolveApplicantProfileSnapshot(request, meetup);
 
         Optional<LocalInterviewMeetupParticipant> existingOpt = participantRepository
                 .findByMeetupIdAndUserId(meetupId, userId);
@@ -268,12 +301,13 @@ public class LocalInterviewMeetupService {
             if (existing.getStatus() == MeetupParticipationStatus.REJECTED) {
                 throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "거절된 모임에는 다시 신청할 수 없습니다.");
             }
-            existing.reapply(normalizedMessage, now);
-            participantRepository.save(existing);
+            existing.reapply(normalizedMessage, applicantProfile, now);
             return;
         }
 
-        participantRepository.save(LocalInterviewMeetupParticipant.createApplicant(meetup, applicant, normalizedMessage, now));
+        participantRepository.save(
+                LocalInterviewMeetupParticipant.createApplicant(meetup, applicant, normalizedMessage, applicantProfile, now)
+        );
     }
 
     @Transactional
@@ -295,11 +329,9 @@ public class LocalInterviewMeetupService {
 
         if (participant.getStatus() == MeetupParticipationStatus.APPROVED) {
             meetup.decrementParticipants();
-            meetupRepository.save(meetup);
         }
 
         participant.cancel(Instant.now());
-        participantRepository.save(participant);
     }
 
     @Transactional(readOnly = true)
@@ -354,10 +386,68 @@ public class LocalInterviewMeetupService {
             }
             applicant.approve(now);
             meetup.incrementParticipants();
-            meetupRepository.save(meetup);
         } else {
             applicant.reject(now);
         }
-        participantRepository.save(applicant);
+    }
+
+    private LocalInterviewMeetupParticipant.ProfileSnapshot resolveHostProfileSnapshot(
+            CreateLocalInterviewMeetupRequest request
+    ) {
+        MeetupJobCategory category = request.hostJobCategory() != null
+                ? request.hostJobCategory()
+                : request.jobCategory();
+        MeetupJobRole role = request.hostJobRole() != null
+                ? request.hostJobRole()
+                : request.jobRole();
+        return resolveExperienceSnapshot(
+                category,
+                role,
+                request.hostExperienceYears(),
+                request.hostExperienceLevel()
+        );
+    }
+
+    private LocalInterviewMeetupParticipant.ProfileSnapshot resolveApplicantProfileSnapshot(
+            CreateMeetupParticipantRequest request,
+            LocalInterviewMeetup meetup
+    ) {
+        MeetupJobCategory category = request != null && request.jobCategory() != null
+                ? request.jobCategory()
+                : meetup.getJobCategory();
+        MeetupJobRole role = request != null && request.jobRole() != null
+                ? request.jobRole()
+                : meetup.getJobRole();
+        Integer requestedYears = request != null ? request.experienceYears() : null;
+        MeetupExperienceLevel requestedLevel = request != null ? request.experienceLevel() : null;
+        return resolveExperienceSnapshot(category, role, requestedYears, requestedLevel);
+    }
+
+    private LocalInterviewMeetupParticipant.ProfileSnapshot resolveExperienceSnapshot(
+            MeetupJobCategory category,
+            MeetupJobRole role,
+            Integer experienceYears,
+            MeetupExperienceLevel experienceLevel
+    ) {
+        if (experienceYears != null) {
+            MeetupExperienceLevel resolvedLevel = experienceLevel != null
+                    ? experienceLevel
+                    : MeetupExperienceLevel.fromExperienceYears(experienceYears);
+            return new LocalInterviewMeetupParticipant.ProfileSnapshot(category, role, experienceYears, resolvedLevel);
+        }
+        if (experienceLevel != null) {
+            return new LocalInterviewMeetupParticipant.ProfileSnapshot(
+                    category,
+                    role,
+                    experienceLevel.defaultExperienceYears(),
+                    experienceLevel
+            );
+        }
+        return new LocalInterviewMeetupParticipant.ProfileSnapshot(
+                category,
+                role,
+                0,
+                MeetupExperienceLevel.ENTRY
+        );
     }
 }

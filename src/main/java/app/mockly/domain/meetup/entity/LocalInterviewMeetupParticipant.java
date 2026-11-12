@@ -63,17 +63,30 @@ public class LocalInterviewMeetupParticipant extends BaseEntity {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
-    public static LocalInterviewMeetupParticipant createHost(LocalInterviewMeetup meetup, User hostUser, Instant now) {
+    public record ProfileSnapshot(
+            MeetupJobCategory jobCategory,
+            MeetupJobRole jobRole,
+            int experienceYears,
+            MeetupExperienceLevel experienceLevel
+    ) {
+    }
+
+    public static LocalInterviewMeetupParticipant createHost(
+            LocalInterviewMeetup meetup,
+            User hostUser,
+            ProfileSnapshot profileSnapshot,
+            Instant now
+    ) {
         return LocalInterviewMeetupParticipant.builder()
                 .meetup(meetup)
                 .user(hostUser)
                 .host(true)
                 .status(MeetupParticipationStatus.APPROVED)
                 .message(null)
-                .jobCategory(meetup.getJobCategory())
-                .jobRole(meetup.getJobRole())
-                .experienceYears(meetup.getExperienceLevel().defaultExperienceYears())
-                .experienceLevel(meetup.getExperienceLevel())
+                .jobCategory(profileSnapshot.jobCategory())
+                .jobRole(profileSnapshot.jobRole())
+                .experienceYears(profileSnapshot.experienceYears())
+                .experienceLevel(profileSnapshot.experienceLevel())
                 .appliedAt(now)
                 .reviewedAt(now)
                 .build();
@@ -83,6 +96,7 @@ public class LocalInterviewMeetupParticipant extends BaseEntity {
             LocalInterviewMeetup meetup,
             User applicant,
             String message,
+            ProfileSnapshot profileSnapshot,
             Instant now
     ) {
         return LocalInterviewMeetupParticipant.builder()
@@ -91,17 +105,21 @@ public class LocalInterviewMeetupParticipant extends BaseEntity {
                 .host(false)
                 .status(MeetupParticipationStatus.PENDING)
                 .message(message)
-                .jobCategory(meetup.getJobCategory())
-                .jobRole(meetup.getJobRole())
-                .experienceYears(meetup.getExperienceLevel().defaultExperienceYears())
-                .experienceLevel(meetup.getExperienceLevel())
+                .jobCategory(profileSnapshot.jobCategory())
+                .jobRole(profileSnapshot.jobRole())
+                .experienceYears(profileSnapshot.experienceYears())
+                .experienceLevel(profileSnapshot.experienceLevel())
                 .appliedAt(now)
                 .build();
     }
 
-    public void reapply(String message, Instant now) {
+    public void reapply(String message, ProfileSnapshot profileSnapshot, Instant now) {
         this.status = MeetupParticipationStatus.PENDING;
         this.message = message;
+        this.jobCategory = profileSnapshot.jobCategory();
+        this.jobRole = profileSnapshot.jobRole();
+        this.experienceYears = profileSnapshot.experienceYears();
+        this.experienceLevel = profileSnapshot.experienceLevel();
         this.appliedAt = now;
         this.reviewedAt = null;
     }
