@@ -1,0 +1,19 @@
+<context>
+<interview_type>%s</interview_type>
+<question_number>%d</question_number>
+</context>
+
+<question>%s</question>
+
+<original_answer>%s</original_answer>
+
+<improvement_goal>
+<title>%s</title>
+<summary>%s</summary>
+</improvement_goal>
+
+<submitted_answer>%s</submitted_answer>
+
+<task>
+위 질문과 개선 목표를 기준으로 지원자의 재답변(submitted_answer)을 원본 답변(original_answer)과 비교 평가해 구조화된 결과를 반환하세요.
+</task>

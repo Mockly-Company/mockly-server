@@ -92,6 +92,49 @@ public class InterviewAiService {
         }
     }
 
+    public app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult evaluateImprovementPractice(
+            app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext context
+    ) {
+        InterviewPrompt prompt = interviewPromptFactory.improvementPractice(context);
+
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult result = chatClient.prompt()
+                    .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
+                    .system(prompt.system())
+                    .user(prompt.user())
+                    .call()
+                    .entity(app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult.class);
+            validateImprovementEvaluationResult(result);
+            sample.stop(Timer.builder("ai.improvement_practice.duration")
+                    .tag("status", "success")
+                    .register(meterRegistry));
+            return result;
+        } catch (BusinessException e) {
+            sample.stop(Timer.builder("ai.improvement_practice.duration")
+                    .tag("status", "error")
+                    .register(meterRegistry));
+            throw e;
+        } catch (Exception e) {
+            sample.stop(Timer.builder("ai.improvement_practice.duration")
+                    .tag("status", "error")
+                    .register(meterRegistry));
+            log.error("AI 개선 연습 비교 평가 실패", e);
+            throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
+        }
+    }
+
+    private void validateImprovementEvaluationResult(app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult result) {
+        if (result == null
+                || result.score() < 1
+                || result.score() > 100
+                || result.summary() == null || result.summary().isBlank()
+                || result.detail() == null || result.detail().isBlank()
+                || result.quote() == null || result.quote().isBlank()) {
+            throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR, "AI 개선 연습 평가 결과가 유효하지 않습니다.");
+        }
+    }
+
     private record KeywordCandidates(
             @JsonProperty(required = true, value = "keywords") List<String> keywords) {}
 

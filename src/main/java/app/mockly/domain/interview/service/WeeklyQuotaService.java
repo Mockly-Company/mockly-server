@@ -67,6 +67,20 @@ public class WeeklyQuotaService {
         quotaUsageRepository.save(usage);
     }
 
+    public boolean hasRemaining(UUID userId, WeeklyQuotaContext context, QuotaType quotaType) {
+        if (!context.available()) {
+            return false;
+        }
+        int limit = switch (quotaType) {
+            case INTERVIEW -> context.product().getWeeklyInterviewLimit();
+            case IMPROVEMENT_PRACTICE -> context.product().getWeeklyImprovementPracticeLimit();
+        };
+        if (limit <= 0) {
+            return false;
+        }
+        return getUsed(userId, quotaType, context.periodStart()) < limit;
+    }
+
     private int getUsed(UUID userId, QuotaType quotaType, LocalDate periodStart) {
         return quotaUsageRepository.findByUserIdAndQuotaTypeAndPeriodStart(userId, quotaType, periodStart)
                 .map(QuotaUsage::getUsedCount)

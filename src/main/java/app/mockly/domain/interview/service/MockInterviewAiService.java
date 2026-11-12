@@ -58,4 +58,19 @@ public class MockInterviewAiService extends InterviewAiService {
                 plan == PlanTier.PRO ? "결론을 먼저 말하기" : null
         );
     }
+
+    @Override
+    public app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult evaluateImprovementPractice(
+            app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext context
+    ) {
+        log.info("[MOCK] evaluateImprovementPractice 실행");
+        return new app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult(
+                86,
+                "원본 답변 대비 수치와 구체적인 해결 과정이 명확해졌습니다.",
+                "문제 정의부터 원인 분석, 해결 전략, 결과 지표까지 구조적으로 서술되었습니다.",
+                context.submittedAnswer() != null && !context.submittedAnswer().isBlank()
+                        ? context.submittedAnswer()
+                        : "개선된 답변 핵심 문장"
+        );
+    }
 }
