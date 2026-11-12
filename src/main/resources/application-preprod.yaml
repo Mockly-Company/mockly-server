@@ -12,6 +12,7 @@ spring:
 
   flyway:
     enabled: true
+    out-of-order: true
 
 springdoc:
   api-docs:

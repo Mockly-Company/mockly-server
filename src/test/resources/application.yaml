@@ -34,6 +34,14 @@ oauth:
       ios: test-ios-client-id.apps.googleusercontent.com
     token-uri: https://oauth2.googleapis.com/token
     issuer: https://accounts.google.com
+  apple:
+    client-id: com.mockly.mobile
+    team-id: TESTTEAMID
+    key-id: TESTKEYID1
+    private-key: ""
+    token-uri: https://appleid.apple.com/auth/token
+    jwks-uri: https://appleid.apple.com/auth/keys
+    issuer: https://appleid.apple.com
 
 # OpenAI 테스트 설정 (InterviewAiService @MockitoBean으로 대체)
 spring.ai:

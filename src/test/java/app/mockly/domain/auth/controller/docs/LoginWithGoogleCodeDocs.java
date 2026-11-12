@@ -24,14 +24,18 @@ public class LoginWithGoogleCodeDocs {
             fieldWithPath("locationInfo.longitude").description("경도").type(SimpleType.NUMBER).optional()
     );
 
-    private static final List<FieldDescriptor> RESPONSE_DATA_FIELDS = List.of(
+    public static final List<FieldDescriptor> LOGIN_RESPONSE_DATA_FIELDS = List.of(
             fieldWithPath("accessToken").description("Mockly JWT access token (15분 유효)").type(SimpleType.STRING),
             fieldWithPath("refreshToken").description("Mockly refresh token (7일 유효)").type(SimpleType.STRING),
             fieldWithPath("expiresIn").description("Access token 만료 시간 (ms)").type(SimpleType.NUMBER),
             fieldWithPath("user").description("사용자 정보").type(JsonFieldType.OBJECT),
             fieldWithPath("user.id").description("사용자 ID").type(SimpleType.STRING),
             fieldWithPath("user.email").description("이메일").type(SimpleType.STRING),
-            fieldWithPath("user.name").description("이름").type(SimpleType.STRING)
+            fieldWithPath("user.name").description("이름").type(SimpleType.STRING),
+            fieldWithPath("user.hasAgreedToTerms").description("필수 약관 동의 완료 여부").type(SimpleType.BOOLEAN),
+            fieldWithPath("user.jobCategory").description("희망 직군").type(SimpleType.STRING).optional(),
+            fieldWithPath("user.jobRole").description("희망 직무").type(SimpleType.STRING).optional(),
+            fieldWithPath("user.experienceYears").description("경력 연차").type(SimpleType.NUMBER).optional()
     );
 
     public static ResourceSnippetParameters success() {
@@ -39,7 +43,7 @@ public class LoginWithGoogleCodeDocs {
                 .summary("Google 소셜 로그인 (OAuth 2.1)")
                 .description("OAuth 2.1 + PKCE를 사용한 Google 소셜 로그인")
                 .requestFields(REQUEST_FIELDS)
-                .responseFields(ApiResponseDocs.withDataFields(RESPONSE_DATA_FIELDS))
+                .responseFields(ApiResponseDocs.withDataFields(LOGIN_RESPONSE_DATA_FIELDS))
                 .build();
     }
 }

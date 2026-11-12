@@ -2,20 +2,22 @@ package app.mockly.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.flywaydb.core.Flyway;
-import java.sql.DriverManager;
 import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.util.UUID;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 
 class FlywaySchemaMigrationTest {
 
     @Test
-    void v1_creates_the_weekly_plan_schema_without_payapp_checkout() throws Exception {
+    void v1_and_v3_create_account_lifecycle_and_multi_user_device_session_schema() throws Exception {
         String jdbcUrl = "jdbc:h2:mem:flyway-schema;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
         Flyway.configure()
                 .dataSource(jdbcUrl, "sa", "")
                 .locations("classpath:db/migration")
+                .outOfOrder(true)
                 .load()
                 .migrate();
 
@@ -49,6 +51,32 @@ class FlywaySchemaMigrationTest {
             assertThat(columnType(metaData, "interview_feedback", "score_structure")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_strength", "question_number")).isEqualTo("INTEGER");
             assertThat(columnType(metaData, "feedback_improvement", "rank")).isEqualTo("INTEGER");
+
+            // V3: users profile/terms/withdrawal columns + user_agreement table + multi-user session constraint
+            assertThat(columnExists(metaData, "users", "job_category")).isTrue();
+            assertThat(columnExists(metaData, "users", "job_role")).isTrue();
+            assertThat(columnExists(metaData, "users", "experience_years")).isTrue();
+            assertThat(columnExists(metaData, "users", "terms_agreed_at")).isTrue();
+            assertThat(columnExists(metaData, "users", "deleted_at")).isTrue();
+            assertThat(tableExists(metaData, "user_agreement")).isTrue();
+            assertThat(columnExists(metaData, "user_agreement", "agreement_type")).isTrue();
+            assertThat(columnExists(metaData, "user_agreement", "agreed")).isTrue();
+            assertThat(columnExists(metaData, "user_agreement", "agreed_at")).isTrue();
+
+            UUID userA = UUID.randomUUID();
+            UUID userB = UUID.randomUUID();
+            try (var stmt = connection.createStatement()) {
+                stmt.executeUpdate("""
+                        INSERT INTO users (id, provider, provider_id, email, name, created_at, updated_at)
+                        VALUES ('%s', 'GOOGLE', 'sub-a', 'a@example.com', 'User A', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                               ('%s', 'APPLE', 'sub-b', 'b@example.com', 'User B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """.formatted(userA, userB));
+                stmt.executeUpdate("""
+                        INSERT INTO session (user_id, device_id, device_name, created_at, updated_at)
+                        VALUES ('%s', 'shared-iphone-device', 'iPhone 16', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                               ('%s', 'shared-iphone-device', 'iPhone 16', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """.formatted(userA, userB));
+            }
 
             try (var freeLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_interview_limit

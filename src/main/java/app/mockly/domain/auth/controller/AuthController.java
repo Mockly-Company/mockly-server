@@ -42,6 +42,14 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(loginResponse));
     }
 
+    @PostMapping("/login/apple/code")
+    public ResponseEntity<ApiResponse<LoginResponse>> loginWithAppleCode(
+            @Valid @RequestBody LoginWithAppleCodeRequest request
+    ) {
+        LoginResponse loginResponse = authService.loginWithAppleCode(request);
+        return ResponseEntity.ok(ApiResponse.success(loginResponse));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<UserInfo>> getCurrentUser(@AuthenticationPrincipal UUID userId) {
         UserInfo userInfo = authService.getCurrentUser(userId);
