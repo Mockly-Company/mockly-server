@@ -97,6 +97,50 @@ class FlywaySchemaMigrationTest {
         }
     }
 
+    @Test
+    void v3_succeeds_even_when_legacy_session_device_constraint_was_already_dropped_or_renamed() {
+        String jdbcUrl = "jdbc:h2:mem:flyway-v3-legacy-constraint;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+        Flyway.configure()
+                .dataSource(jdbcUrl, "sa", "")
+                .locations("classpath:db/migration")
+                .target("1")
+                .load()
+                .migrate();
+
+        try (var connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+             var stmt = connection.createStatement()) {
+            stmt.executeUpdate("ALTER TABLE session DROP CONSTRAINT uk_session_device_id");
+            stmt.executeUpdate("ALTER TABLE session ADD CONSTRAINT session_device_id_key UNIQUE (device_id)");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        Flyway.configure()
+                .dataSource(jdbcUrl, "sa", "")
+                .locations("classpath:db/migration")
+                .outOfOrder(true)
+                .load()
+                .migrate();
+
+        try (var connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+             var stmt = connection.createStatement()) {
+            UUID u1 = UUID.randomUUID();
+            UUID u2 = UUID.randomUUID();
+            stmt.executeUpdate("""
+                    INSERT INTO users (id, provider, provider_id, email, name, created_at, updated_at)
+                    VALUES ('%s', 'GOOGLE', 'g-1', 'g1@example.com', 'G1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                           ('%s', 'APPLE', 'a-2', 'a2@example.com', 'A2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """.formatted(u1, u2));
+            stmt.executeUpdate("""
+                    INSERT INTO session (user_id, device_id, device_name, created_at, updated_at)
+                    VALUES ('%s', 'same-device-id', 'iPhone', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                           ('%s', 'same-device-id', 'iPhone', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """.formatted(u1, u2));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private boolean tableExists(DatabaseMetaData metaData, String tableName) throws Exception {
         try (ResultSet tables = metaData.getTables(null, null, tableName, new String[]{"TABLE"})) {
             return tables.next();

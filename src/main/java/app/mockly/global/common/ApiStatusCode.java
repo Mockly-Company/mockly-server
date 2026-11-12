@@ -40,8 +40,10 @@ public enum ApiStatusCode {
     // 500: 서버 오류
     INTERNAL_SERVER_ERROR(500, "INTERNAL_SERVER_ERROR", "서버 내부 오류가 발생했습니다"),
     FILE_UPLOAD_ERROR(500, "FILE_UPLOAD_ERROR", "파일 업로드에 실패했습니다"),
+    OAUTH_CONFIG_ERROR(500, "OAUTH_CONFIG_ERROR", "소셜 로그인 서버 설정이 올바르지 않습니다"),
 
-    // 503: 외부 서비스 오류
+    // 502 / 503: 외부 서비스 오류
+    EXTERNAL_AUTH_ERROR(502, "EXTERNAL_AUTH_ERROR", "외부 인증 서버 연동 중 오류가 발생했습니다"),
     AI_SERVICE_ERROR(503, "AI_SERVICE_ERROR", "AI 서비스 오류가 발생했습니다");
 
     private final int status;

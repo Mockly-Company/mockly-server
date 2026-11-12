@@ -3,6 +3,7 @@ package app.mockly.domain.auth.service;
 import app.mockly.domain.auth.dto.AppleUser;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.AppleOAuthProperties;
+import app.mockly.global.exception.BusinessException;
 import app.mockly.global.exception.InvalidTokenException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class DefaultAppleOAuthServiceTest {
@@ -146,5 +148,59 @@ class DefaultAppleOAuthServiceTest {
                 .isInstanceOf(InvalidTokenException.class)
                 .extracting("statusCode")
                 .isEqualTo(ApiStatusCode.INVALID_APPLE_TOKEN);
+    }
+
+    @Test
+    @DisplayName("Apple 5xx 응답 시 EXTERNAL_AUTH_ERROR(502) BusinessException을 던진다")
+    void apple5xxServerErrorThrowsExternalAuthError() throws Exception {
+        KeyPairGenerator ecGen = KeyPairGenerator.getInstance("EC");
+        ecGen.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair ecKeyPair = ecGen.generateKeyPair();
+
+        AppleOAuthProperties props = new AppleOAuthProperties();
+        props.setClientId("com.mockly.mobile");
+        props.setTeamId("TEAM123456");
+        props.setKeyId("KEY1234567");
+        props.setPrivateKey(Base64.getEncoder().encodeToString(ecKeyPair.getPrivate().getEncoded()));
+        props.setTokenUri("https://appleid.apple.com/auth/token");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer mockServer = MockRestServiceServer.bindTo(builder).build();
+        mockServer.expect(requestTo("https://appleid.apple.com/auth/token"))
+                .andRespond(withServerError());
+
+        DefaultAppleOAuthService service = new DefaultAppleOAuthService(builder.build(), props);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode("code", "verifier", "mockly://oauth/callback"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("statusCode")
+                .isEqualTo(ApiStatusCode.EXTERNAL_AUTH_ERROR);
+    }
+
+    @Test
+    @DisplayName("Apple OAuth 설정 누락 또는 개인키 파싱 실패 시 OAUTH_CONFIG_ERROR BusinessException으로 원인을 보존한다")
+    void missingConfigOrInvalidPrivateKeyThrowsOAuthConfigError() {
+        AppleOAuthProperties unconfigured = new AppleOAuthProperties();
+        DefaultAppleOAuthService unconfiguredService = new DefaultAppleOAuthService(RestClient.create(), unconfigured);
+
+        assertThatThrownBy(() -> unconfiguredService.exchangeAuthorizationCode("code", "verifier", "mockly://oauth/callback"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("statusCode")
+                .isEqualTo(ApiStatusCode.OAUTH_CONFIG_ERROR);
+
+        AppleOAuthProperties badKeyProps = new AppleOAuthProperties();
+        badKeyProps.setClientId("com.mockly.mobile");
+        badKeyProps.setTeamId("TEAM123456");
+        badKeyProps.setKeyId("KEY1234567");
+        badKeyProps.setPrivateKey("not-a-valid-pkcs8-ec-key");
+        DefaultAppleOAuthService badKeyService = new DefaultAppleOAuthService(RestClient.create(), badKeyProps);
+
+        assertThatThrownBy(() -> badKeyService.exchangeAuthorizationCode("code", "verifier", "mockly://oauth/callback"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException be = (BusinessException) ex;
+                    assertThat(be.getStatusCode()).isEqualTo(ApiStatusCode.OAUTH_CONFIG_ERROR);
+                    assertThat(be.getCause()).isNotNull();
+                });
     }
 }

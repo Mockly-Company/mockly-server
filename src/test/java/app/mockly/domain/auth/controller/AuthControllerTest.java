@@ -319,6 +319,72 @@ class AuthControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/auth/login/apple/code - 실패: email_verified=false인 경우 동일 이메일 기존 계정에 연동하지 않고 거부한다")
+    void loginWithAppleCode_UnverifiedEmailDoesNotLinkExistingUser() throws Exception {
+        AppleUser unverifiedAppleUser = new AppleUser(
+                "apple-sub-unverified-attacker",
+                "test@example.com",
+                false
+        );
+
+        given(appleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString()))
+                .willReturn("mock-apple-id-token");
+        given(appleOAuthService.verifyIdToken(anyString()))
+                .willReturn(unverifiedAppleUser);
+
+        LoginWithAppleCodeRequest request = new LoginWithAppleCodeRequest(
+                "apple-auth-code-unverified",
+                "apple-code-verifier",
+                "mockly://oauth/callback",
+                new DeviceInfo("attacker-ios-device", "iPhone"),
+                null,
+                "공격자"
+        );
+
+        mockMvc.perform(post("/api/auth/login/apple/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("INVALID_APPLE_TOKEN"));
+
+        assertThat(sessionRepository.findByUserAndDeviceId(testUser, "attacker-ios-device")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login/google/code - 실패: email_verified=false인 경우 동일 이메일 기존 계정에 연동하지 않고 거부한다")
+    void loginWithGoogleCode_UnverifiedEmailDoesNotLinkExistingUser() throws Exception {
+        GoogleUser unverifiedGoogleUser = new GoogleUser(
+                "google-sub-unverified-attacker",
+                "test@example.com",
+                "공격자",
+                false
+        );
+
+        given(googleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString(), any()))
+                .willReturn("mock-google-id-token");
+        given(googleOAuthService.verifyIdToken(anyString()))
+                .willReturn(unverifiedGoogleUser);
+
+        AuthorizationCodeRequest request = new AuthorizationCodeRequest(
+                "google-auth-code-unverified",
+                "google-code-verifier",
+                "https://mockly.app/oauth2/google/redirect",
+                new DeviceInfo("attacker-android-device", "Pixel"),
+                null
+        );
+
+        mockMvc.perform(post("/api/auth/login/google/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("INVALID_GOOGLE_TOKEN"));
+
+        assertThat(sessionRepository.findByUserAndDeviceId(testUser, "attacker-android-device")).isEmpty();
+    }
+
+    @Test
     @DisplayName("POST /api/auth/login/apple/code - 실패: 유효하지 않은 Apple 인증 코드")
     void loginWithAppleCode_InvalidToken() throws Exception {
         given(appleOAuthService.exchangeAuthorizationCode(anyString(), anyString(), anyString()))

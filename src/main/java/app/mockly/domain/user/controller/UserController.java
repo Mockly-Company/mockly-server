@@ -5,6 +5,7 @@ import app.mockly.domain.user.dto.request.SaveUserAgreementsRequest;
 import app.mockly.domain.user.dto.request.UpdateUserProfileRequest;
 import app.mockly.domain.user.service.UserService;
 import app.mockly.global.common.ApiResponse;
+import app.mockly.global.security.BearerTokenExtractor;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -44,10 +45,7 @@ public class UserController {
             @PathVariable UUID userId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization
     ) {
-        String accessToken = null;
-        if (authorization != null && authorization.startsWith("Bearer ")) {
-            accessToken = authorization.substring(7);
-        }
+        String accessToken = BearerTokenExtractor.extract(authorization);
         userService.withdrawUser(authenticatedUserId, userId, accessToken);
         return ResponseEntity.ok(ApiResponse.noContent());
     }

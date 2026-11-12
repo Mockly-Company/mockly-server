@@ -1,23 +1,17 @@
 package app.mockly.domain.user.service;
 
 import app.mockly.domain.auth.dto.UserInfo;
-import app.mockly.domain.auth.entity.RefreshToken;
-import app.mockly.domain.auth.entity.Session;
 import app.mockly.domain.auth.entity.User;
-import app.mockly.domain.auth.repository.RefreshTokenRepository;
-import app.mockly.domain.auth.repository.SessionRepository;
 import app.mockly.domain.auth.repository.UserRepository;
 import app.mockly.domain.auth.service.JwtService;
 import app.mockly.domain.auth.service.TokenBlacklistService;
 import app.mockly.domain.payment.client.PortOneService;
-import app.mockly.domain.payment.entity.PaymentMethod;
-import app.mockly.domain.payment.repository.PaymentMethodRepository;
-import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.domain.user.dto.request.SaveUserAgreementsRequest;
 import app.mockly.domain.user.dto.request.UpdateUserProfileRequest;
 import app.mockly.domain.user.entity.AgreementType;
 import app.mockly.domain.user.entity.UserAgreement;
 import app.mockly.domain.user.repository.UserAgreementRepository;
+import app.mockly.domain.user.service.UserAccountStateService.WithdrawalStateResult;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.EnumMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -39,10 +32,7 @@ import java.util.stream.Collectors;
 public class UserService {
     private final UserRepository userRepository;
     private final UserAgreementRepository userAgreementRepository;
-    private final SessionRepository sessionRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
-    private final SubscriptionRepository subscriptionRepository;
-    private final PaymentMethodRepository paymentMethodRepository;
+    private final UserAccountStateService userAccountStateService;
     private final PortOneService portOneService;
     private final JwtService jwtService;
     private final TokenBlacklistService tokenBlacklistService;
@@ -54,7 +44,12 @@ public class UserService {
         Map<AgreementType, Boolean> submitted = new EnumMap<>(AgreementType.class);
         for (SaveUserAgreementsRequest.AgreementItem item : request.agreements()) {
             AgreementType type = AgreementType.fromCode(item.type());
-            submitted.put(type, item.agreed());
+            if (submitted.put(type, item.agreed()) != null) {
+                throw new BusinessException(
+                        ApiStatusCode.VALIDATION_ERROR,
+                        "중복된 약관 항목입니다: " + type.getCode()
+                );
+            }
         }
 
         for (AgreementType requiredType : AgreementType.requiredTypes()) {
@@ -102,50 +97,22 @@ public class UserService {
         return UserInfo.from(user);
     }
 
-    @Transactional
     public void withdrawUser(UUID authenticatedUserId, UUID targetUserId, String accessToken) {
-        if (authenticatedUserId == null || !authenticatedUserId.equals(targetUserId)) {
-            throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인 계정만 탈퇴할 수 있습니다.");
-        }
+        WithdrawalStateResult stateResult = userAccountStateService.withdrawUserInTransaction(
+                authenticatedUserId,
+                targetUserId
+        );
 
-        User user = userRepository.findByIdForUpdate(targetUserId)
-                .filter(existing -> !existing.isDeleted())
-                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
-
-        subscriptionRepository.findCurrentByUserId(targetUserId).ifPresent(subscription -> {
-            String scheduleId = subscription.getCurrentPaymentScheduleId();
-            if (scheduleId != null) {
-                try {
-                    portOneService.revokePaymentSchedule(scheduleId);
-                    log.info("회원 탈퇴 결제 스케줄 취소 완료 - userId: {}, subscriptionId: {}, scheduleId: {}",
-                            targetUserId, subscription.getId(), scheduleId);
-                } catch (Exception e) {
-                    log.error("회원 탈퇴 결제 스케줄 취소 실패 - userId: {}, subscriptionId: {}, scheduleId: {}",
-                            targetUserId, subscription.getId(), scheduleId, e);
-                }
-                subscription.setCurrentPaymentScheduleId(null);
-            }
-            subscription.cancel();
-            subscriptionRepository.saveAndFlush(subscription);
-        });
-
-        List<PaymentMethod> activeMethods = paymentMethodRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(targetUserId);
-        for (PaymentMethod method : activeMethods) {
-            method.unsetDefault();
-            method.deactivate();
-        }
-
-        List<Session> sessions = sessionRepository.findByUserIdOrderByLastAccessedAtDesc(targetUserId);
-        for (Session session : sessions) {
-            RefreshToken refreshToken = session.getRefreshToken();
-            if (refreshToken != null) {
-                session.updateRefreshToken(null);
-                refreshTokenRepository.delete(refreshToken);
+        if (stateResult.scheduleIdToRevoke() != null) {
+            try {
+                portOneService.revokePaymentSchedule(stateResult.scheduleIdToRevoke());
+                log.info("회원 탈퇴 결제 스케줄 취소 완료 - userId: {}, subscriptionId: {}, scheduleId: {}",
+                        targetUserId, stateResult.canceledSubscriptionId(), stateResult.scheduleIdToRevoke());
+            } catch (Exception e) {
+                log.error("회원 탈퇴 결제 스케줄 취소 실패 - userId: {}, subscriptionId: {}, scheduleId: {}",
+                        targetUserId, stateResult.canceledSubscriptionId(), stateResult.scheduleIdToRevoke(), e);
             }
         }
-        user.getSessions().clear();
-        sessionRepository.deleteAll(sessions);
-        sessionRepository.flush();
 
         if (accessToken != null && !accessToken.isBlank()) {
             long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
@@ -154,7 +121,6 @@ public class UserService {
             }
         }
 
-        user.withdraw(Instant.now());
         log.info("회원 탈퇴 처리 완료 - userId: {}", targetUserId);
     }
 

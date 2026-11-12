@@ -23,4 +23,12 @@ public interface SessionRepository extends JpaRepository<Session, Long> {
     List<Session> findActiveSessionsByUser(@Param("user") User user, @Param("now") Instant now);
 
     List<Session> findByUserIdOrderByLastAccessedAtDesc(UUID userId);
+
+    @Query("""
+            SELECT s FROM Session s
+                LEFT JOIN FETCH s.refreshToken
+            WHERE s.user.id = :userId
+            ORDER BY s.lastAccessedAt DESC
+            """)
+    List<Session> findByUserIdWithRefreshToken(@Param("userId") UUID userId);
 }

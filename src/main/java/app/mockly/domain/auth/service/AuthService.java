@@ -68,7 +68,9 @@ public class AuthService {
         GoogleUser googleUser = googleOAuthService.verifyIdToken(idToken);
         User user = userRepository.findByProviderAndProviderId(OAuth2Provider.GOOGLE, googleUser.sub())
                 .filter(existing -> !existing.isDeleted())
-                .or(() -> findExistingActiveUserByEmail(googleUser.email()))
+                .or(() -> googleUser.emailVerified()
+                        ? findExistingActiveUserByEmail(googleUser.email())
+                        : java.util.Optional.empty())
                 .orElseGet(() -> createUser(googleUser));
 
         return issueSessionAndTokens(user, deviceInfo, locationInfo);
@@ -84,7 +86,9 @@ public class AuthService {
         AppleUser appleUser = appleOAuthService.verifyIdToken(idToken);
         User user = userRepository.findByProviderAndProviderId(OAuth2Provider.APPLE, appleUser.sub())
                 .filter(existing -> !existing.isDeleted())
-                .or(() -> findExistingActiveUserByEmail(appleUser.email()))
+                .or(() -> appleUser.emailVerified()
+                        ? findExistingActiveUserByEmail(appleUser.email())
+                        : java.util.Optional.empty())
                 .orElseGet(() -> createAppleUser(appleUser, request.fullName()));
 
         return issueSessionAndTokens(user, request.deviceInfo(), request.locationInfo());
@@ -96,6 +100,12 @@ public class AuthService {
         }
         return userRepository.findByEmail(email)
                 .filter(existing -> !existing.isDeleted());
+    }
+
+    private void ensureUnverifiedEmailNotOwnedByActiveUser(String email, boolean emailVerified, ApiStatusCode errorStatus) {
+        if (!emailVerified && findExistingActiveUserByEmail(email).isPresent()) {
+            throw new InvalidTokenException(errorStatus, "이메일 인증이 완료되지 않은 계정으로는 기존 회원과 연동할 수 없습니다.");
+        }
     }
 
     private LoginResponse issueSessionAndTokens(User user, DeviceInfo deviceInfo, LocationInfo locationInfo) {
@@ -119,6 +129,11 @@ public class AuthService {
     }
 
     private User createUser(GoogleUser googleUser) {
+        ensureUnverifiedEmailNotOwnedByActiveUser(
+                googleUser.email(),
+                googleUser.emailVerified(),
+                ApiStatusCode.INVALID_GOOGLE_TOKEN
+        );
         User newUser = User.from(googleUser);
         User savedUser = userRepository.save(newUser);
 
@@ -128,6 +143,11 @@ public class AuthService {
     }
 
     private User createAppleUser(AppleUser appleUser, String fullName) {
+        ensureUnverifiedEmailNotOwnedByActiveUser(
+                appleUser.email(),
+                appleUser.emailVerified(),
+                ApiStatusCode.INVALID_APPLE_TOKEN
+        );
         User newUser = User.fromApple(appleUser, fullName);
         User savedUser = userRepository.save(newUser);
 

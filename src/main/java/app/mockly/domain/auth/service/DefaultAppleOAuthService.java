@@ -4,6 +4,7 @@ import app.mockly.domain.auth.dto.AppleToken;
 import app.mockly.domain.auth.dto.AppleUser;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.config.AppleOAuthProperties;
+import app.mockly.global.exception.BusinessException;
 import app.mockly.global.exception.InvalidTokenException;
 import io.jsonwebtoken.Jwts;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -53,7 +55,10 @@ public class DefaultAppleOAuthService implements AppleOAuthService {
     @Override
     public String exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
         if (!properties.isClientSecretConfigured()) {
-            throw new IllegalStateException("oauth.apple (team-id, key-id, private-key) 설정이 완료되지 않았습니다");
+            throw new BusinessException(
+                    ApiStatusCode.OAUTH_CONFIG_ERROR,
+                    "Apple OAuth 서버 설정(team-id, key-id, private-key)이 완료되지 않았습니다"
+            );
         }
 
         String clientSecret = generateClientSecret();
@@ -64,21 +69,36 @@ public class DefaultAppleOAuthService implements AppleOAuthService {
                 + "&redirect_uri=" + encode(redirectUri)
                 + "&code_verifier=" + encode(codeVerifier);
 
-        AppleToken appleToken = restClient.post()
-                .uri(properties.getTokenUri())
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(formBody)
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    log.error("Apple Token 교환 실패: status={} redirectUri={} response={}",
-                            res.getStatusCode(), redirectUri, readErrorBody(res));
-                    throw new InvalidTokenException(ApiStatusCode.INVALID_APPLE_TOKEN, "Apple 인증 코드가 유효하지 않습니다");
-                })
-                .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                    log.error("Apple Server Error: {}", res.getStatusCode());
-                    throw new RuntimeException("Apple 서버 오류가 발생했습니다");
-                })
-                .body(AppleToken.class);
+        AppleToken appleToken;
+        try {
+            appleToken = restClient.post()
+                    .uri(properties.getTokenUri())
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(formBody)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                        log.error("Apple Token 교환 실패: status={} redirectUri={} response={}",
+                                res.getStatusCode(), redirectUri, readErrorBody(res));
+                        throw new InvalidTokenException(ApiStatusCode.INVALID_APPLE_TOKEN, "Apple 인증 코드가 유효하지 않습니다");
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                        log.error("Apple Server Error: status={}", res.getStatusCode());
+                        throw new BusinessException(
+                                ApiStatusCode.EXTERNAL_AUTH_ERROR,
+                                "Apple 인증 서버 오류가 발생했습니다"
+                        );
+                    })
+                    .body(AppleToken.class);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RestClientException e) {
+            log.error("Apple Token 교환 네트워크 오류: redirectUri={}", redirectUri, e);
+            throw new BusinessException(
+                    ApiStatusCode.EXTERNAL_AUTH_ERROR,
+                    "Apple 인증 서버와 통신 중 오류가 발생했습니다",
+                    e
+            );
+        }
 
         if (appleToken == null || appleToken.idToken() == null || appleToken.idToken().isBlank()) {
             throw new InvalidTokenException(ApiStatusCode.INVALID_APPLE_TOKEN, "Apple Token 교환에 실패했습니다");
@@ -99,9 +119,16 @@ public class DefaultAppleOAuthService implements AppleOAuthService {
             boolean emailVerified = Boolean.TRUE.equals(emailVerifiedClaim)
                     || "true".equalsIgnoreCase(String.valueOf(emailVerifiedClaim));
             return new AppleUser(sub, email, emailVerified);
-        } catch (JwtException e) {
+        } catch (BadJwtException e) {
             log.warn("Apple ID Token 검증 실패: {}", e.getMessage());
             throw new InvalidTokenException(ApiStatusCode.INVALID_APPLE_TOKEN, "유효하지 않은 Apple ID Token입니다");
+        } catch (JwtException e) {
+            log.error("Apple JWKS 공개키 조회 또는 디코더 오류", e);
+            throw new BusinessException(
+                    ApiStatusCode.EXTERNAL_AUTH_ERROR,
+                    "Apple 인증 서버 공개키 조회 중 오류가 발생했습니다",
+                    e
+            );
         }
     }
 
@@ -147,7 +174,11 @@ public class DefaultAppleOAuthService implements AppleOAuthService {
                     .compact();
         } catch (Exception e) {
             log.error("Apple client_secret 생성 실패");
-            throw new IllegalStateException("Apple client_secret 생성에 실패했습니다", e);
+            throw new BusinessException(
+                    ApiStatusCode.OAUTH_CONFIG_ERROR,
+                    "Apple client_secret 생성에 실패했습니다",
+                    e
+            );
         }
     }
 

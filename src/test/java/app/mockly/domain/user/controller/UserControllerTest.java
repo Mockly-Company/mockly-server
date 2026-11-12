@@ -183,6 +183,25 @@ class UserControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/users/agreements - 실패: 중복된 약관 항목 제출 시 400 VALIDATION_ERROR")
+    void saveUserAgreements_DuplicateType() throws Exception {
+        SaveUserAgreementsRequest request = new SaveUserAgreementsRequest(List.of(
+                new SaveUserAgreementsRequest.AgreementItem("age14", true),
+                new SaveUserAgreementsRequest.AgreementItem("terms", true),
+                new SaveUserAgreementsRequest.AgreementItem("terms", false),
+                new SaveUserAgreementsRequest.AgreementItem("privacy", true)
+        ));
+
+        mockMvc.perform(post("/api/users/agreements")
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     @DisplayName("PATCH /api/users/me - 성공: 닉네임·희망 직군/직무·경력 연차 수정")
     void updateMyProfile_Success() throws Exception {
         UpdateUserProfileRequest request = new UpdateUserProfileRequest(
