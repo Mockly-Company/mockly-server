@@ -6,7 +6,9 @@ import app.mockly.domain.auth.entity.User;
 import app.mockly.domain.auth.repository.RefreshTokenRepository;
 import app.mockly.domain.auth.repository.SessionRepository;
 import app.mockly.domain.auth.repository.UserRepository;
+import app.mockly.domain.payment.entity.OutboxEvent;
 import app.mockly.domain.payment.entity.PaymentMethod;
+import app.mockly.domain.payment.repository.OutboxEventRepository;
 import app.mockly.domain.payment.repository.PaymentMethodRepository;
 import app.mockly.domain.product.repository.SubscriptionRepository;
 import app.mockly.global.common.ApiStatusCode;
@@ -30,28 +32,46 @@ public class UserAccountStateService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentMethodRepository paymentMethodRepository;
+    private final OutboxEventRepository outboxEventRepository;
 
-    public record WithdrawalStateResult(
-            Long canceledSubscriptionId,
+    public record WithdrawalPreparation(
+            Long subscriptionId,
             String scheduleIdToRevoke
     ) {
     }
 
-    @Transactional
-    public WithdrawalStateResult withdrawUserInTransaction(UUID authenticatedUserId, UUID targetUserId) {
+    @Transactional(readOnly = true)
+    public WithdrawalPreparation prepareWithdrawal(UUID authenticatedUserId, UUID targetUserId) {
         if (authenticatedUserId == null || !authenticatedUserId.equals(targetUserId)) {
             throw new BusinessException(ApiStatusCode.FORBIDDEN, "본인 계정만 탈퇴할 수 있습니다.");
         }
 
+        userRepository.findById(targetUserId)
+                .filter(existing -> !existing.isDeleted())
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
+
+        return subscriptionRepository.findCurrentByUserId(targetUserId)
+                .map(subscription -> new WithdrawalPreparation(
+                        subscription.getId(),
+                        subscription.getCurrentPaymentScheduleId()
+                ))
+                .orElseGet(() -> new WithdrawalPreparation(null, null));
+    }
+
+    @Transactional
+    public void completeWithdrawal(UUID targetUserId, String revokedScheduleId) {
         User user = userRepository.findByIdForUpdate(targetUserId)
                 .filter(existing -> !existing.isDeleted())
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
 
-        final Long[] subscriptionIdHolder = {null};
-        final String[] scheduleIdHolder = {null};
         subscriptionRepository.findCurrentByUserId(targetUserId).ifPresent(subscription -> {
-            subscriptionIdHolder[0] = subscription.getId();
-            scheduleIdHolder[0] = subscription.getCurrentPaymentScheduleId();
+            String latestScheduleId = subscription.getCurrentPaymentScheduleId();
+            if (latestScheduleId != null
+                    && !latestScheduleId.isBlank()
+                    && !latestScheduleId.equals(revokedScheduleId)) {
+                outboxEventRepository.save(OutboxEvent.scheduleRevoke(subscription.getId(), latestScheduleId));
+            }
+            subscription.setCurrentPaymentScheduleId(null);
             subscription.cancel();
             subscriptionRepository.saveAndFlush(subscription);
         });
@@ -82,6 +102,5 @@ public class UserAccountStateService {
         }
 
         user.withdraw(Instant.now());
-        return new WithdrawalStateResult(subscriptionIdHolder[0], scheduleIdHolder[0]);
     }
 }

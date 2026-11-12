@@ -28,6 +28,8 @@ import app.mockly.domain.user.controller.docs.UserDocs;
 import app.mockly.domain.user.dto.request.SaveUserAgreementsRequest;
 import app.mockly.domain.user.dto.request.UpdateUserProfileRequest;
 import app.mockly.domain.user.repository.UserAgreementRepository;
+import app.mockly.global.common.ApiStatusCode;
+import app.mockly.global.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +53,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch;
@@ -292,6 +296,7 @@ class UserControllerTest {
         Subscription canceledSubscription = subscriptionRepository.findById(paidSubscription.getId()).orElseThrow();
         assertThat(canceledSubscription.getStatus()).isEqualTo(SubscriptionStatus.CANCELED);
         assertThat(canceledSubscription.getCurrentMarker()).isNull();
+        assertThat(canceledSubscription.getCurrentPaymentScheduleId()).isNull();
 
         PaymentMethod deactivatedMethod = paymentMethodRepository.findById(paymentMethod.getId()).orElseThrow();
         assertThat(deactivatedMethod.isActive()).isFalse();
@@ -304,6 +309,57 @@ class UserControllerTest {
         assertThat(withdrawn.isDeleted()).isTrue();
         assertThat(withdrawn.getName()).isEqualTo(User.WITHDRAWN_USER_NAME);
         assertThat(withdrawn.getEmail()).isEqualTo("deleted-" + testUser.getId() + "@withdrawn.mockly.app");
+    }
+
+    @Test
+    @DisplayName("DELETE /api/users/{userId} - 실패: PortOne 결제 스케줄 취소 실패 시 502 반환 및 계정·구독 상태 보존")
+    void withdrawUser_PortOneRevokeFailure_AbortsWithdrawalWith502() throws Exception {
+        SubscriptionProduct basicProduct = subscriptionProductRepository.save(SubscriptionProduct.builder()
+                .name("Basic")
+                .description("베이직 플랜")
+                .planTier(PlanTier.BASIC)
+                .isActive(true)
+                .build());
+        SubscriptionPlan basicPlan = subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .product(basicProduct)
+                .price(new java.math.BigDecimal("5900"))
+                .currency(Currency.KRW)
+                .billingCycle(BillingCycle.MONTHLY)
+                .build());
+        Subscription paidSubscription = Subscription.create(testUser.getId(), basicPlan);
+        paidSubscription.activate();
+        paidSubscription.setCurrentPaymentScheduleId("schedule-fail-502");
+        paidSubscription = subscriptionRepository.save(paidSubscription);
+
+        PaymentMethod paymentMethod = paymentMethodRepository.save(
+                PaymentMethod.create(testUser, "billing-key-keep", "1234-****-****-5678", "SHINHAN", true)
+        );
+
+        doThrow(new BusinessException(ApiStatusCode.INTERNAL_SERVER_ERROR, "결제 예약 취소 도중 오류가 발생했습니다."))
+                .when(portOneService)
+                .revokePaymentSchedule("schedule-fail-502");
+
+        mockMvc.perform(delete("/api/users/{userId}", testUser.getId())
+                        .header("Authorization", "Bearer " + validAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("EXTERNAL_PAYMENT_ERROR"));
+
+        verify(tokenBlacklistService, never()).save(anyString(), anyLong());
+
+        User unchangedUser = userRepository.findById(testUser.getId()).orElseThrow();
+        assertThat(unchangedUser.isDeleted()).isFalse();
+
+        Subscription unchangedSubscription = subscriptionRepository.findById(paidSubscription.getId()).orElseThrow();
+        assertThat(unchangedSubscription.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(unchangedSubscription.getCurrentPaymentScheduleId()).isEqualTo("schedule-fail-502");
+
+        PaymentMethod unchangedMethod = paymentMethodRepository.findById(paymentMethod.getId()).orElseThrow();
+        assertThat(unchangedMethod.isActive()).isTrue();
+        assertThat(sessionRepository.findByUserIdOrderByLastAccessedAtDesc(testUser.getId())).isNotEmpty();
+        assertThat(refreshTokenRepository.findByToken(validRefreshToken)).isPresent();
     }
 
     @Test

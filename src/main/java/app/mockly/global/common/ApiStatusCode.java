@@ -44,6 +44,7 @@ public enum ApiStatusCode {
 
     // 502 / 503: 외부 서비스 오류
     EXTERNAL_AUTH_ERROR(502, "EXTERNAL_AUTH_ERROR", "외부 인증 서버 연동 중 오류가 발생했습니다"),
+    EXTERNAL_PAYMENT_ERROR(502, "EXTERNAL_PAYMENT_ERROR", "외부 결제 서비스 연동 중 오류가 발생했습니다"),
     AI_SERVICE_ERROR(503, "AI_SERVICE_ERROR", "AI 서비스 오류가 발생했습니다");
 
     private final int status;

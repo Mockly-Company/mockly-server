@@ -11,7 +11,7 @@ import app.mockly.domain.user.dto.request.UpdateUserProfileRequest;
 import app.mockly.domain.user.entity.AgreementType;
 import app.mockly.domain.user.entity.UserAgreement;
 import app.mockly.domain.user.repository.UserAgreementRepository;
-import app.mockly.domain.user.service.UserAccountStateService.WithdrawalStateResult;
+import app.mockly.domain.user.service.UserAccountStateService.WithdrawalPreparation;
 import app.mockly.global.common.ApiStatusCode;
 import app.mockly.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -98,26 +98,39 @@ public class UserService {
     }
 
     public void withdrawUser(UUID authenticatedUserId, UUID targetUserId, String accessToken) {
-        WithdrawalStateResult stateResult = userAccountStateService.withdrawUserInTransaction(
+        WithdrawalPreparation preparation = userAccountStateService.prepareWithdrawal(
                 authenticatedUserId,
                 targetUserId
         );
 
-        if (stateResult.scheduleIdToRevoke() != null) {
+        String revokedScheduleId = null;
+        if (preparation.scheduleIdToRevoke() != null && !preparation.scheduleIdToRevoke().isBlank()) {
             try {
-                portOneService.revokePaymentSchedule(stateResult.scheduleIdToRevoke());
+                portOneService.revokePaymentSchedule(preparation.scheduleIdToRevoke());
+                revokedScheduleId = preparation.scheduleIdToRevoke();
                 log.info("회원 탈퇴 결제 스케줄 취소 완료 - userId: {}, subscriptionId: {}, scheduleId: {}",
-                        targetUserId, stateResult.canceledSubscriptionId(), stateResult.scheduleIdToRevoke());
+                        targetUserId, preparation.subscriptionId(), revokedScheduleId);
             } catch (Exception e) {
                 log.error("회원 탈퇴 결제 스케줄 취소 실패 - userId: {}, subscriptionId: {}, scheduleId: {}",
-                        targetUserId, stateResult.canceledSubscriptionId(), stateResult.scheduleIdToRevoke(), e);
+                        targetUserId, preparation.subscriptionId(), preparation.scheduleIdToRevoke(), e);
+                throw new BusinessException(
+                        ApiStatusCode.EXTERNAL_PAYMENT_ERROR,
+                        "외부 결제 예약 취소에 실패하여 회원 탈퇴를 완료할 수 없습니다. 잠시 후 다시 시도해주세요.",
+                        e
+                );
             }
         }
 
+        userAccountStateService.completeWithdrawal(targetUserId, revokedScheduleId);
+
         if (accessToken != null && !accessToken.isBlank()) {
-            long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
-            if (remainingExpiration > 0) {
-                tokenBlacklistService.save(accessToken, remainingExpiration);
+            try {
+                long remainingExpiration = jwtService.getRemainingExpiration(accessToken);
+                if (remainingExpiration > 0) {
+                    tokenBlacklistService.save(accessToken, remainingExpiration);
+                }
+            } catch (Exception e) {
+                log.warn("회원 탈퇴 액세스 토큰 블랙리스트 등록 실패 - userId: {}", targetUserId, e);
             }
         }
 

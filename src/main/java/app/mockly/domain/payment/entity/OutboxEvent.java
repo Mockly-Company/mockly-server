@@ -66,10 +66,39 @@ public class OutboxEvent extends BaseEntity {
         }
     }
 
+    public static OutboxEvent scheduleRevoke(Long subscriptionId, String scheduleId) {
+        try {
+            Map<String, Object> payloadMap = Map.of(
+                    "subscriptionId", subscriptionId,
+                    "scheduleId", scheduleId
+            );
+            String payload = objectMapper.writeValueAsString(payloadMap);
+            OutboxEvent event = new OutboxEvent();
+            event.aggregateType = "SUBSCRIPTION";
+            event.aggregateId = subscriptionId;
+            event.eventType = "SCHEDULE_REVOKE";
+            event.payload = payload;
+            event.status = OutboxEventStatus.PENDING;
+            event.retryCount = 0;
+            return event;
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("OutboxEvent payload 직렬화 실패", e);
+        }
+    }
+
     public String extractBillingKey() {
         try {
             JsonNode node = objectMapper.readTree(payload);
             return node.get("billingKey").asText();
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Outbox payload 파싱 실패", e);
+        }
+    }
+
+    public String extractScheduleId() {
+        try {
+            JsonNode node = objectMapper.readTree(payload);
+            return node.get("scheduleId").asText();
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Outbox payload 파싱 실패", e);
         }
