@@ -25,7 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ImprovementPracticeController {
 
-    private static final long SSE_TIMEOUT_MS = 60_000L;
+    private static final long SSE_TIMEOUT_MS = 180_000L;
 
     private final ImprovementPracticeService improvementPracticeService;
     private final ImprovementPracticeSseManager improvementPracticeSseManager;
@@ -66,8 +66,15 @@ public class ImprovementPracticeController {
         ImprovementPracticeStatusInfo statusInfo = improvementPracticeService.getStatusInfo(userId, practiceId);
         SseEmitter emitter = improvementPracticeSseManager.connect(practiceId, SSE_TIMEOUT_MS);
         ImprovementPracticeStatus status = statusInfo.status();
-        if (status == ImprovementPracticeStatus.COMPLETED || status == ImprovementPracticeStatus.FAILED) {
-            improvementPracticeSseManager.send(practiceId, status, statusInfo.failReason());
+        if (status == ImprovementPracticeStatus.COMPLETED) {
+            improvementPracticeSseManager.send(practiceId, status);
+            improvementPracticeSseManager.complete(practiceId);
+        } else if (status == ImprovementPracticeStatus.FAILED) {
+            improvementPracticeSseManager.send(
+                    practiceId,
+                    status,
+                    ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
+            );
             improvementPracticeSseManager.complete(practiceId);
         }
         return emitter;

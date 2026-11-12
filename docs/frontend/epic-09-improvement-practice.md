@@ -106,12 +106,15 @@
   event: status
   data: {"practiceStatus":"failed","message":"답변 개선 평가 생성에 실패했습니다."}
   ```
-- 이미 `COMPLETED` 또는 `FAILED`인 연습에 연결하면 즉시 `status` 이벤트를 1회 전송하고 스트림을 정상 종료합니다.
+- 이미 `COMPLETED` 또는 `FAILED`인 연습에 연결하면 즉시 `status` 이벤트를 1회 전송하고 스트림을 정상 종료합니다. 실패 시 내부 예외 원문 대신 고정 안내 문구(`"답변 개선 평가 생성에 실패했습니다."`)가 전달됩니다.
+- 단일 인스턴스 인메모리 SSE 구조이므로 네트워크 재연결/다중 인스턴스 환경에 대비해 클라이언트에서는 스트림 종료·타임아웃(180초) 시 `GET /api/interviews/improvement-practices/{practiceId}` 단건 조회 폴백을 유지하는 것을 권장합니다 (다중 인스턴스 확장 시 Redis Pub/Sub 전파 예정).
 
 ### 2.5 `POST /api/interviews/improvement-practices/{practiceId}/retry` (신규)
 
 - **성공 응답 (`200 OK`)**: `GET /api/interviews/improvement-practices/{practiceId}`와 동일한 스키마(`status: "GENERATING"`, `result: null`)를 반환하며 추가 주간 쿼터를 차감하지 않습니다.
-- `FAILED` 상태가 아닌 연습에 호출하면 `400 VALIDATION_ERROR`를 반환합니다.
+- **오류 응답**:
+  - `403 FORBIDDEN`: 현재 활성 구독이 Pro 플랜이 아닌 경우 (구독 만료·다운그레이드 포함)
+  - `400 VALIDATION_ERROR`: `FAILED` 상태가 아니거나 수동 재시도 상한(`3`회)을 초과한 경우
 
 ---
 
@@ -131,4 +134,5 @@
 - **유지 계약**:
   - 기존 면접 진행·피드백 생성·주간 면접 쿼터(`QuotaType.INTERVIEW`) 동작은 변경 없이 유지됩니다.
   - 미납 구독(`UNPAID`) 사용자는 기존 `/api/interviews/**` 접근 제어와 동일하게 `402 SUBSCRIPTION_UNPAID`가 반환됩니다.
+- **릴리스 노트**: 병렬 진행 중인 에픽 마이그레이션(`V2`~`V5`)의 순차 반영을 위해 `spring.flyway.out-of-order: ${FLYWAY_OUT_OF_ORDER:true}`로 설정되어 있으며, 모든 병렬 마이그레이션이 `main`에 통합된 이후 운영 환경에서 `FLYWAY_OUT_OF_ORDER=false`로 잠글 수 있습니다.
 - **계약 기준**: Spring REST Docs 및 `./gradlew openapi3`로 생성된 `openapi3.yaml`을 최종 필드 계약 기준으로 삼습니다.

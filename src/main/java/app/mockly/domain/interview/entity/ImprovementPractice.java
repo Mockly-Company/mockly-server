@@ -15,6 +15,8 @@ import java.util.UUID;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class ImprovementPractice extends BaseEntity {
 
+    public static final int MAX_MANUAL_RETRIES = 3;
+
     private static final int MAX_SUMMARY_LENGTH = 300;
     private static final int MAX_FAIL_REASON_LENGTH = 500;
 
@@ -64,6 +66,10 @@ public class ImprovementPractice extends BaseEntity {
     @Column(name = "fail_reason", length = MAX_FAIL_REASON_LENGTH)
     private String failReason;
 
+    @Builder.Default
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount = 0;
+
     public static ImprovementPractice createPending(
             UUID userId,
             InterviewSession session,
@@ -80,6 +86,7 @@ public class ImprovementPractice extends BaseEntity {
                 .questionText(questionText)
                 .originalAnswer(originalAnswer)
                 .status(ImprovementPracticeStatus.PENDING)
+                .retryCount(0)
                 .build();
     }
 
@@ -89,7 +96,12 @@ public class ImprovementPractice extends BaseEntity {
         this.failReason = null;
     }
 
+    public boolean canRetry() {
+        return this.retryCount < MAX_MANUAL_RETRIES;
+    }
+
     public void markRetryGenerating() {
+        this.retryCount++;
         this.status = ImprovementPracticeStatus.GENERATING;
         this.score = null;
         this.summary = null;

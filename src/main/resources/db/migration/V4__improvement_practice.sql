@@ -13,6 +13,7 @@ CREATE TABLE improvement_practice (
     detail TEXT,
     quote TEXT,
     fail_reason VARCHAR(500),
+    retry_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT pk_improvement_practice PRIMARY KEY (id),
@@ -27,3 +28,9 @@ CREATE INDEX idx_improvement_practice_user_created
 
 CREATE INDEX idx_improvement_practice_status_updated
     ON improvement_practice (status, updated_at);
+
+CREATE INDEX idx_improvement_practice_session
+    ON improvement_practice (session_id);
+
+CREATE INDEX idx_improvement_practice_improvement
+    ON improvement_practice (improvement_id);

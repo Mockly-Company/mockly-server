@@ -41,7 +41,7 @@ public class ImprovementPracticeStateService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean complete(Long practiceId, ImprovementPracticeEvaluationResult result) {
-        Optional<ImprovementPractice> optionalPractice = improvementPracticeRepository.findById(practiceId);
+        Optional<ImprovementPractice> optionalPractice = improvementPracticeRepository.findByIdForUpdate(practiceId);
         if (optionalPractice.isEmpty()) {
             return false;
         }
@@ -56,7 +56,7 @@ public class ImprovementPracticeStateService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean fail(Long practiceId, String reason) {
-        Optional<ImprovementPractice> optionalPractice = improvementPracticeRepository.findById(practiceId);
+        Optional<ImprovementPractice> optionalPractice = improvementPracticeRepository.findByIdForUpdate(practiceId);
         if (optionalPractice.isEmpty()) {
             return false;
         }

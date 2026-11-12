@@ -91,7 +91,7 @@ public class ImprovementPracticeService {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
 
-        ImprovementPractice practice = findOwnedPractice(userId, practiceId);
+        ImprovementPractice practice = findOwnedPracticeForUpdate(userId, practiceId);
         if (practice.getStatus() != ImprovementPracticeStatus.PENDING) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "대기 상태의 연습 건에만 답변을 제출할 수 있습니다.");
         }
@@ -115,9 +115,21 @@ public class ImprovementPracticeService {
 
     @Transactional
     public GetImprovementPracticeResponse retryPractice(UUID userId, Long practiceId) {
-        ImprovementPractice practice = findOwnedPractice(userId, practiceId);
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.USER_NOT_FOUND));
+
+        WeeklyQuotaContext quotaContext = weeklyQuotaService.calculateCurrentQuotaContext(user, Instant.now());
+        validateProImprovementPracticeTier(quotaContext);
+
+        ImprovementPractice practice = findOwnedPracticeForUpdate(userId, practiceId);
         if (practice.getStatus() != ImprovementPracticeStatus.FAILED) {
             throw new BusinessException(ApiStatusCode.VALIDATION_ERROR, "실패 상태의 연습 건만 재시도할 수 있습니다.");
+        }
+        if (!practice.canRetry()) {
+            throw new BusinessException(
+                    ApiStatusCode.VALIDATION_ERROR,
+                    "최대 재시도 횟수(" + ImprovementPractice.MAX_MANUAL_RETRIES + "회)를 초과했습니다."
+            );
         }
 
         practice.markRetryGenerating();
@@ -129,6 +141,15 @@ public class ImprovementPracticeService {
 
     private ImprovementPractice findOwnedPractice(UUID userId, Long practiceId) {
         ImprovementPractice practice = improvementPracticeRepository.findById(practiceId)
+                .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "개선 연습 내역을 찾을 수 없습니다."));
+        if (!practice.getUserId().equals(userId)) {
+            throw new BusinessException(ApiStatusCode.FORBIDDEN, "해당 개선 연습에 접근할 권한이 없습니다.");
+        }
+        return practice;
+    }
+
+    private ImprovementPractice findOwnedPracticeForUpdate(UUID userId, Long practiceId) {
+        ImprovementPractice practice = improvementPracticeRepository.findByIdForUpdate(practiceId)
                 .orElseThrow(() -> new BusinessException(ApiStatusCode.RESOURCE_NOT_FOUND, "개선 연습 내역을 찾을 수 없습니다."));
         if (!practice.getUserId().equals(userId)) {
             throw new BusinessException(ApiStatusCode.FORBIDDEN, "해당 개선 연습에 접근할 권한이 없습니다.");

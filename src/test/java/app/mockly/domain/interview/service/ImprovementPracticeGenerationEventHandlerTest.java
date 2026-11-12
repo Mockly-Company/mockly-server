@@ -107,14 +107,50 @@ class ImprovementPracticeGenerationEventHandlerTest {
         given(stateService.loadEvaluationContext(practiceId)).willReturn(Optional.of(context));
         given(interviewAiService.evaluateImprovementPractice(context))
                 .willThrow(new RuntimeException("OpenAI timeout"));
-        given(stateService.fail(eq(practiceId), anyString())).willReturn(true);
+        given(stateService.fail(
+                practiceId,
+                ImprovementPracticeGenerationEventHandler.REASON_AI_EVALUATION_FAILED
+        )).willReturn(true);
 
         handler.handle(new ImprovementPracticeRequestedEvent(practiceId));
 
         verify(interviewAiService, times(2)).evaluateImprovementPractice(context);
         verify(stateService, never()).complete(any(), any());
-        verify(stateService).fail(eq(practiceId), anyString());
-        verify(sseManager).send(practiceId, ImprovementPracticeStatus.FAILED, "답변 개선 평가 생성에 실패했습니다.");
+        verify(stateService).fail(
+                practiceId,
+                ImprovementPracticeGenerationEventHandler.REASON_AI_EVALUATION_FAILED
+        );
+        verify(sseManager).send(
+                practiceId,
+                ImprovementPracticeStatus.FAILED,
+                ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
+        );
+        verify(sseManager).complete(practiceId);
+    }
+
+    @Test
+    @DisplayName("컨텍스트 로딩 중 예외 발생 시 GENERATING 고착을 막기 위해 FAILED로 전이하고 SSE를 전송한다")
+    void handle_contextLoadFailure_marksFailedAndSendsFailedSse() {
+        Long practiceId = 15L;
+        given(stateService.loadEvaluationContext(practiceId))
+                .willThrow(new RuntimeException("DB connection transient error"));
+        given(stateService.fail(
+                practiceId,
+                ImprovementPracticeGenerationEventHandler.REASON_CONTEXT_LOAD_ERROR
+        )).willReturn(true);
+
+        handler.handle(new ImprovementPracticeRequestedEvent(practiceId));
+
+        verify(interviewAiService, never()).evaluateImprovementPractice(any());
+        verify(stateService).fail(
+                practiceId,
+                ImprovementPracticeGenerationEventHandler.REASON_CONTEXT_LOAD_ERROR
+        );
+        verify(sseManager).send(
+                practiceId,
+                ImprovementPracticeStatus.FAILED,
+                ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
+        );
         verify(sseManager).complete(practiceId);
     }
 
@@ -133,22 +169,34 @@ class ImprovementPracticeGenerationEventHandlerTest {
     }
 
     @Test
-    @DisplayName("재시도 대기 중 인터럽트 발생 시 FAILED 마킹 없이 스레드 인터럽트 상태를 유지한다")
-    void handle_interruptedDuringBackoff_preservesInterruptWithoutMarkingFailed() {
+    @DisplayName("재시도 대기 중 인터럽트 발생 시 FAILED로 전이해 재시도 가능 상태를 보장하고 스레드 인터럽트 플래그도 복원한다")
+    void handle_interruptedDuringBackoff_marksFailedAndPreservesInterrupt() {
         Long practiceId = 14L;
         ImprovementPracticeEvaluationContext context = sampleContext();
 
         given(stateService.loadEvaluationContext(practiceId)).willReturn(Optional.of(context));
         given(interviewAiService.evaluateImprovementPractice(context))
                 .willThrow(new RuntimeException("temporary failure"));
+        given(stateService.fail(
+                practiceId,
+                ImprovementPracticeGenerationEventHandler.REASON_EVALUATION_INTERRUPTED
+        )).willReturn(true);
 
         try {
             Thread.currentThread().interrupt();
             handler.handle(new ImprovementPracticeRequestedEvent(practiceId));
 
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
-            verify(stateService, never()).fail(any(), anyString());
-            verify(sseManager, never()).send(eq(practiceId), eq(ImprovementPracticeStatus.FAILED), anyString());
+            verify(stateService).fail(
+                    practiceId,
+                    ImprovementPracticeGenerationEventHandler.REASON_EVALUATION_INTERRUPTED
+            );
+            verify(sseManager).send(
+                    practiceId,
+                    ImprovementPracticeStatus.FAILED,
+                    ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
+            );
+            verify(sseManager).complete(practiceId);
         } finally {
             Thread.interrupted();
         }

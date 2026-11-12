@@ -19,6 +19,9 @@ import java.util.Optional;
 public class ImprovementPracticeGenerationEventHandler {
 
     private static final int MAX_RETRY = 2;
+    static final String REASON_CONTEXT_LOAD_ERROR = "CONTEXT_LOAD_ERROR";
+    static final String REASON_EVALUATION_INTERRUPTED = "EVALUATION_INTERRUPTED";
+    static final String REASON_AI_EVALUATION_FAILED = "AI_EVALUATION_FAILED";
 
     private final ImprovementPracticeStateService stateService;
     private final InterviewAiService interviewAiService;
@@ -34,6 +37,7 @@ public class ImprovementPracticeGenerationEventHandler {
             contextOpt = stateService.loadEvaluationContext(practiceId);
         } catch (Exception e) {
             log.error("개선 연습 평가 컨텍스트 로딩 실패 practiceId={}", practiceId, e);
+            markFailedAndNotify(practiceId, REASON_CONTEXT_LOAD_ERROR);
             return;
         }
 
@@ -50,21 +54,30 @@ public class ImprovementPracticeGenerationEventHandler {
             }
         } catch (PracticeInterruptedException e) {
             log.warn("개선 연습 평가 인터럽트 practiceId={}", practiceId, e);
-            Thread.currentThread().interrupt();
+            Thread.interrupted();
+            try {
+                markFailedAndNotify(practiceId, REASON_EVALUATION_INTERRUPTED);
+            } finally {
+                Thread.currentThread().interrupt();
+            }
         } catch (Exception e) {
-            handleEvaluationFailure(practiceId, e);
+            log.error("개선 연습 비교 평가 실패 practiceId={}", practiceId, e);
+            markFailedAndNotify(practiceId, REASON_AI_EVALUATION_FAILED);
         }
     }
 
-    private void handleEvaluationFailure(Long practiceId, Exception exception) {
-        log.error("개선 연습 비교 평가 실패 practiceId={}", practiceId, exception);
+    private void markFailedAndNotify(Long practiceId, String reasonCode) {
         try {
-            if (stateService.fail(practiceId, exception.getMessage())) {
-                sseManager.send(practiceId, ImprovementPracticeStatus.FAILED, "답변 개선 평가 생성에 실패했습니다.");
+            if (stateService.fail(practiceId, reasonCode)) {
+                sseManager.send(
+                        practiceId,
+                        ImprovementPracticeStatus.FAILED,
+                        ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
+                );
                 sseManager.complete(practiceId);
             }
         } catch (Exception failEx) {
-            log.error("개선 연습 실패 상태 저장 중 오류 practiceId={}", practiceId, failEx);
+            log.error("개선 연습 실패 상태 저장 중 오류 practiceId={} reasonCode={}", practiceId, reasonCode, failEx);
         }
     }
 

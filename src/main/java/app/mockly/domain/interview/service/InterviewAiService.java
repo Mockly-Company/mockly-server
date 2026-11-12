@@ -1,5 +1,7 @@
 package app.mockly.domain.interview.service;
 
+import app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext;
+import app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult;
 import app.mockly.domain.interview.dto.InterviewFeedbackResult;
 import app.mockly.domain.interview.dto.InterviewPrompt;
 import app.mockly.domain.interview.entity.InterviewMessage;
@@ -29,6 +31,10 @@ public class InterviewAiService {
     private final InterviewPromptFactory interviewPromptFactory;
     private final InterviewAiProperties interviewAiProperties;
     private final MeterRegistry meterRegistry;
+    private final Timer feedbackSuccessTimer;
+    private final Timer feedbackErrorTimer;
+    private final Timer improvementPracticeSuccessTimer;
+    private final Timer improvementPracticeErrorTimer;
 
     public InterviewAiService(ChatClient.Builder chatClientBuilder, InterviewPromptFactory interviewPromptFactory,
                               InterviewAiProperties interviewAiProperties, MeterRegistry meterRegistry) {
@@ -36,6 +42,18 @@ public class InterviewAiService {
         this.interviewPromptFactory = interviewPromptFactory;
         this.interviewAiProperties = interviewAiProperties;
         this.meterRegistry = meterRegistry;
+        this.feedbackSuccessTimer = Timer.builder("ai.feedback.duration")
+                .tag("status", "success")
+                .register(meterRegistry);
+        this.feedbackErrorTimer = Timer.builder("ai.feedback.duration")
+                .tag("status", "error")
+                .register(meterRegistry);
+        this.improvementPracticeSuccessTimer = Timer.builder("ai.improvement_practice.duration")
+                .tag("status", "success")
+                .register(meterRegistry);
+        this.improvementPracticeErrorTimer = Timer.builder("ai.improvement_practice.duration")
+                .tag("status", "error")
+                .register(meterRegistry);
     }
 
     public Flux<String> generateFirstQuestion(InterviewSession session) {
@@ -79,52 +97,42 @@ public class InterviewAiService {
                     .user(prompt.user())
                     .call()
                     .entity(InterviewFeedbackResult.class);
-            sample.stop(Timer.builder("ai.feedback.duration")
-                    .tag("status", "success")
-                    .register(meterRegistry));
+            sample.stop(feedbackSuccessTimer);
             return result;
         } catch (Exception e) {
-            sample.stop(Timer.builder("ai.feedback.duration")
-                    .tag("status", "error")
-                    .register(meterRegistry));
+            sample.stop(feedbackErrorTimer);
             log.error("AI 피드백 생성 실패", e);
             throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
         }
     }
 
-    public app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult evaluateImprovementPractice(
-            app.mockly.domain.interview.dto.ImprovementPracticeEvaluationContext context
+    public ImprovementPracticeEvaluationResult evaluateImprovementPractice(
+            ImprovementPracticeEvaluationContext context
     ) {
         InterviewPrompt prompt = interviewPromptFactory.improvementPractice(context);
 
         Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult result = chatClient.prompt()
+            ImprovementPracticeEvaluationResult result = chatClient.prompt()
                     .advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
                     .system(prompt.system())
                     .user(prompt.user())
                     .call()
-                    .entity(app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult.class);
+                    .entity(ImprovementPracticeEvaluationResult.class);
             validateImprovementEvaluationResult(result);
-            sample.stop(Timer.builder("ai.improvement_practice.duration")
-                    .tag("status", "success")
-                    .register(meterRegistry));
+            sample.stop(improvementPracticeSuccessTimer);
             return result;
         } catch (BusinessException e) {
-            sample.stop(Timer.builder("ai.improvement_practice.duration")
-                    .tag("status", "error")
-                    .register(meterRegistry));
+            sample.stop(improvementPracticeErrorTimer);
             throw e;
         } catch (Exception e) {
-            sample.stop(Timer.builder("ai.improvement_practice.duration")
-                    .tag("status", "error")
-                    .register(meterRegistry));
+            sample.stop(improvementPracticeErrorTimer);
             log.error("AI 개선 연습 비교 평가 실패", e);
             throw new BusinessException(ApiStatusCode.AI_SERVICE_ERROR);
         }
     }
 
-    private void validateImprovementEvaluationResult(app.mockly.domain.interview.dto.ImprovementPracticeEvaluationResult result) {
+    private void validateImprovementEvaluationResult(ImprovementPracticeEvaluationResult result) {
         if (result == null
                 || result.score() < 1
                 || result.score() > 100

@@ -65,8 +65,11 @@ class FlywaySchemaMigrationTest {
             assertThat(columnExists(metaData, "improvement_practice", "detail")).isTrue();
             assertThat(columnExists(metaData, "improvement_practice", "quote")).isTrue();
             assertThat(columnExists(metaData, "improvement_practice", "fail_reason")).isTrue();
+            assertThat(columnExists(metaData, "improvement_practice", "retry_count")).isTrue();
             assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_user_created")).isTrue();
             assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_status_updated")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_session")).isTrue();
+            assertThat(indexExists(metaData, "improvement_practice", "idx_improvement_practice_improvement")).isTrue();
 
             try (var freeLimit = connection.createStatement().executeQuery("""
                     SELECT weekly_interview_limit

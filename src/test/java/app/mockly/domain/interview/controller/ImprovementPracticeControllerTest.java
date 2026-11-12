@@ -500,6 +500,42 @@ class ImprovementPracticeControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/interviews/improvement-practices/:practiceId/events - 성공: FAILED 상태 재연결 시 내부 failReason 대신 고정 안내 문구 전송")
+    void streamEvents_failed_emitsSanitizedFailureMessageImmediately() throws Exception {
+        ImprovementPractice practice = ImprovementPractice.createPending(
+                proUser.getId(),
+                proSession,
+                targetImprovement,
+                1,
+                "질문 원문",
+                "기존 답변"
+        );
+        practice.submitAnswer("개선 답변");
+        practice.fail("OpenAI internal timeout detail");
+        practice = improvementPracticeRepository.saveAndFlush(practice);
+
+        MvcResult mvcResult = mockMvc.perform(
+                        get("/api/interviews/improvement-practices/{practiceId}/events", practice.getId())
+                                .header("Authorization", "Bearer " + proAccessToken)
+                                .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String sseBody = mockMvc.perform(asyncDispatch(mvcResult))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(sseBody)
+                .contains("event:status")
+                .contains("\"practiceStatus\":\"failed\"")
+                .contains("답변 개선 평가 생성에 실패했습니다.")
+                .doesNotContain("OpenAI internal timeout detail");
+    }
+
+    @Test
     @DisplayName("GET /api/interviews/improvement-practices/:practiceId/events - 실패: 연습 내역 없음 (404)")
     void streamEvents_notFound() throws Exception {
         mockMvc.perform(get("/api/interviews/improvement-practices/{practiceId}/events", 999999L)
@@ -524,7 +560,7 @@ class ImprovementPracticeControllerTest {
                 "기존 답변"
         );
         practice.submitAnswer("개선 답변");
-        practice.fail("OpenAI timeout");
+        practice.fail("AI_EVALUATION_FAILED");
         practice = improvementPracticeRepository.saveAndFlush(practice);
 
         int usedBefore = weeklyQuotaService.getQuota(proUser).improvementPractice().used();
@@ -542,6 +578,62 @@ class ImprovementPracticeControllerTest {
 
         int usedAfter = weeklyQuotaService.getQuota(proUser).improvementPractice().used();
         assertThat(usedAfter).isEqualTo(usedBefore);
+    }
+
+    @Test
+    @DisplayName("POST /api/interviews/improvement-practices/:practiceId/retry - 실패: Free로 다운그레이드된 유저는 403 FORBIDDEN")
+    void retryPractice_forbiddenWhenDowngradedToFree() throws Exception {
+        ImprovementPractice practice = ImprovementPractice.createPending(
+                proUser.getId(),
+                proSession,
+                targetImprovement,
+                1,
+                "질문 원문",
+                "기존 답변"
+        );
+        practice.submitAnswer("개선 답변");
+        practice.fail("AI_EVALUATION_FAILED");
+        practice = improvementPracticeRepository.saveAndFlush(practice);
+
+        Subscription currentProSub = subscriptionRepository.findCurrentByUserId(proUser.getId()).orElseThrow();
+        currentProSub.cancel();
+        subscriptionRepository.saveAndFlush(currentProSub);
+
+        Subscription downgradedFreeSub = Subscription.create(proUser.getId(), freePlan);
+        downgradedFreeSub.activate();
+        subscriptionRepository.saveAndFlush(downgradedFreeSub);
+
+        mockMvc.perform(post("/api/interviews/improvement-practices/{practiceId}/retry", practice.getId())
+                        .header("Authorization", "Bearer " + proAccessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
+    @DisplayName("POST /api/interviews/improvement-practices/:practiceId/retry - 실패: 수동 재시도 상한(3회) 초과 시 400 VALIDATION_ERROR")
+    void retryPractice_exceedsMaxManualRetries() throws Exception {
+        ImprovementPractice practice = ImprovementPractice.createPending(
+                proUser.getId(),
+                proSession,
+                targetImprovement,
+                1,
+                "질문 원문",
+                "기존 답변"
+        );
+        practice.submitAnswer("개선 답변");
+        for (int i = 0; i < ImprovementPractice.MAX_MANUAL_RETRIES; i++) {
+            practice.fail("AI_EVALUATION_FAILED");
+            practice.markRetryGenerating();
+        }
+        practice.fail("AI_EVALUATION_FAILED");
+        practice = improvementPracticeRepository.saveAndFlush(practice);
+
+        mockMvc.perform(post("/api/interviews/improvement-practices/{practiceId}/retry", practice.getId())
+                        .header("Authorization", "Bearer " + proAccessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
     }
 
     @Test
