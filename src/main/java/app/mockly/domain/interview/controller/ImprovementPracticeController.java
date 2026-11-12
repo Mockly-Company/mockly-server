@@ -63,19 +63,25 @@ public class ImprovementPracticeController {
             @AuthenticationPrincipal UUID userId,
             @PathVariable Long practiceId
     ) {
-        ImprovementPracticeStatusInfo statusInfo = improvementPracticeService.getStatusInfo(userId, practiceId);
         SseEmitter emitter = improvementPracticeSseManager.connect(practiceId, SSE_TIMEOUT_MS);
+        ImprovementPracticeStatusInfo statusInfo;
+        try {
+            statusInfo = improvementPracticeService.getStatusInfo(userId, practiceId);
+        } catch (RuntimeException e) {
+            improvementPracticeSseManager.disconnect(practiceId, emitter);
+            throw e;
+        }
+
         ImprovementPracticeStatus status = statusInfo.status();
         if (status == ImprovementPracticeStatus.COMPLETED) {
-            improvementPracticeSseManager.send(practiceId, status);
-            improvementPracticeSseManager.complete(practiceId);
+            improvementPracticeSseManager.replayTerminalIfActive(practiceId, emitter, status, null);
         } else if (status == ImprovementPracticeStatus.FAILED) {
-            improvementPracticeSseManager.send(
+            improvementPracticeSseManager.replayTerminalIfActive(
                     practiceId,
+                    emitter,
                     status,
                     ImprovementPracticeSseManager.EVALUATION_FAILURE_MESSAGE
             );
-            improvementPracticeSseManager.complete(practiceId);
         }
         return emitter;
     }

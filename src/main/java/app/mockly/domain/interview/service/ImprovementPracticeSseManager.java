@@ -30,10 +30,50 @@ public class ImprovementPracticeSseManager {
     public SseEmitter connect(Long practiceId, long timeout) {
         SseEmitter emitter = new SseEmitter(timeout);
         emitters.computeIfAbsent(practiceId, ignored -> new CopyOnWriteArrayList<>()).add(emitter);
-        emitter.onCompletion(() -> removeEmitter(practiceId, emitter));
-        emitter.onTimeout(() -> removeEmitter(practiceId, emitter));
-        emitter.onError(e -> removeEmitter(practiceId, emitter));
+        emitter.onCompletion(() -> disconnect(practiceId, emitter));
+        emitter.onTimeout(() -> disconnect(practiceId, emitter));
+        emitter.onError(e -> disconnect(practiceId, emitter));
         return emitter;
+    }
+
+    public boolean disconnect(Long practiceId, SseEmitter emitter) {
+        final boolean[] removed = {false};
+        emitters.computeIfPresent(practiceId, (key, list) -> {
+            removed[0] = list.remove(emitter);
+            return list.isEmpty() ? null : list;
+        });
+        return removed[0];
+    }
+
+    public boolean hasActiveSubscribers(Long practiceId) {
+        List<SseEmitter> subscribers = emitters.get(practiceId);
+        return subscribers != null && !subscribers.isEmpty();
+    }
+
+    public void replayTerminalIfActive(
+            Long practiceId,
+            SseEmitter emitter,
+            ImprovementPracticeStatus status,
+            String message
+    ) {
+        if (!disconnect(practiceId, emitter)) {
+            return;
+        }
+        String serializedPayload = serializePayload(practiceId, status, message);
+        if (serializedPayload != null) {
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("status")
+                        .data(serializedPayload));
+            } catch (IOException e) {
+                log.warn("개선 연습 SSE 터미널 상태 즉시 전송 실패 practiceId={}", practiceId, e);
+            }
+        }
+        try {
+            emitter.complete();
+        } catch (Exception e) {
+            log.warn("개선 연습 SSE 초기 complete 실패 practiceId={}", practiceId, e);
+        }
     }
 
     public void send(Long practiceId, ImprovementPracticeStatus status) {
@@ -46,14 +86,8 @@ public class ImprovementPracticeSseManager {
             return;
         }
 
-        String serializedPayload;
-        try {
-            Map<String, Object> payload = message != null
-                    ? Map.of("practiceStatus", status.toEventValue(), "message", message)
-                    : Map.of("practiceStatus", status.toEventValue());
-            serializedPayload = objectMapper.writeValueAsString(payload);
-        } catch (IOException e) {
-            log.warn("개선 연습 SSE 페이로드 직렬화 실패 practiceId={}", practiceId, e);
+        String serializedPayload = serializePayload(practiceId, status, message);
+        if (serializedPayload == null) {
             return;
         }
 
@@ -64,7 +98,7 @@ public class ImprovementPracticeSseManager {
                         .data(serializedPayload));
             } catch (IOException e) {
                 log.warn("개선 연습 SSE 전송 실패 practiceId={}", practiceId, e);
-                removeEmitter(practiceId, emitter);
+                disconnect(practiceId, emitter);
             }
         }
     }
@@ -83,10 +117,15 @@ public class ImprovementPracticeSseManager {
         }
     }
 
-    private void removeEmitter(Long practiceId, SseEmitter emitter) {
-        emitters.computeIfPresent(practiceId, (key, list) -> {
-            list.remove(emitter);
-            return list.isEmpty() ? null : list;
-        });
+    private String serializePayload(Long practiceId, ImprovementPracticeStatus status, String message) {
+        try {
+            Map<String, Object> payload = message != null
+                    ? Map.of("practiceStatus", status.toEventValue(), "message", message)
+                    : Map.of("practiceStatus", status.toEventValue());
+            return objectMapper.writeValueAsString(payload);
+        } catch (IOException e) {
+            log.warn("개선 연습 SSE 페이로드 직렬화 실패 practiceId={}", practiceId, e);
+            return null;
+        }
     }
 }
